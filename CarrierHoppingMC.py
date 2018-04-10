@@ -86,8 +86,7 @@ class CarrierHoppingMC:
 		
 		#Main MC loop:
 		t = 0 #time of latest hop
-		while (t < self.tMax):
-			
+		while True:
 			#Calculate hopping probabilities for each electron:
 			#--- for each electron to each neighbour:
 			hopRateSub = (self.hopFrequency
@@ -103,6 +102,11 @@ class CarrierHoppingMC:
 			#Implement the soonest hop:
 			iHop = np.argmin(hopTime)
 			t = hopTime[iHop]
+			if t > self.tMax:
+				t = self.tMax
+				#Finalize trajectory:
+				trajectory += [ (iElectron, t, iPos) for iElectron,iPos in enumerate(iPosElectron.T) ]
+				break
 			tElectron[iHop] = t
 			#--- select neighbour to hop to:
 			iNeighbor = np.searchsorted(
@@ -111,6 +115,9 @@ class CarrierHoppingMC:
 			#--- update electron position:
 			iPosNew = np.mod(iPosElectron[:,iHop] + self.ir[:,iNeighbor], self.S) #Wrap with periodic boundaries			
 			iPosElectron[:,iHop] = iPosNew
+			trajectory.append([iHop, t, iPosNew])
+			if iPosNew[2] >= self.S[2] - self.irMax:
+				break #Terminate: an electron has reached end of box
 			#--- update cached energies:
 			iPosNeighborNew = iPosNew[:,None] + self.ir
 			E0electron[iHop] = self.E0[
@@ -123,17 +130,13 @@ class CarrierHoppingMC:
 				self.irMax+iPosNeighborNew[2]]
 			
 			print t, np.max(iPosElectron[2])
-			
-		#Finalize trajectory:
-		tElectron = self.tMax
-		trajectory += [ (iElectron, tElectron[iElectron], iPos) for iElectron,iPos in enumerate(iPosElectron.T) ]
 		
 		return trajectory
 	
 #----- Test code -----
 if __name__ == "__main__":
 	params = { 
-		"L": [ 100, 100, 1000 ], #box size in nm
+		"L": [ 100, 100, 300 ], #box size in nm
 		"h": 1., #grid spacing in nm
 		"Efield": 0.01, #electric field in V/nm
 		"dosSigma": 0.2, #dos standard deviation in eV
@@ -145,5 +148,5 @@ if __name__ == "__main__":
 		"tMax": 1e3 #stop simulation at this time from start in seconds
 	}
 	chmc = CarrierHoppingMC(params)
-	print chmc.run()
+	print len(chmc.run())
 	
