@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import numpy as np
+import pickle
 
 #Unit definitions:
 kB = 0.000086174 #in eV/K
@@ -61,7 +62,7 @@ class CarrierHoppingMC:
 		return self.coulombPrefac / np.maximum(1e-6*self.h, np.sqrt(np.sum(r**2, axis=0)))
 	
 	#Calculate coulomb landscape of neighbours given grid separation iPosDelta of center locations
-	#AVodi interaction with iCur: the current electron for which interactions are being calculated
+	#Avoid interaction with iCur: the current electron for which interactions are being calculated
 	def coulombLandscape(self, iPosDelta, iCur):
 		xDelta = (iPosDelta) * (1./self.S[:,None]) #separation in fractional coordinates for pairs with iHop'th electron
 		xDelta[:2] -= np.floor(0.5 + xDelta[:2]) #wrap to nearest periodic neighbours in first two directions
@@ -166,7 +167,7 @@ class CarrierHoppingMC:
 #----- Test code -----
 if __name__ == "__main__":
 	params = { 
-		"L": [ 100, 100, 300 ], #box size in nm
+		"L": [ 100, 100, 1000], #box size in nm
 		"h": 1., #grid spacing in nm
 		"Efield": 0.01, #electric field in V/nm
 		"dosSigma": 0.2, #dos standard deviation in eV
@@ -180,5 +181,12 @@ if __name__ == "__main__":
 		"tMax": 1e3 #stop simulation at this time from start in seconds
 	}
 	chmc = CarrierHoppingMC(params)
-	print len(chmc.run())
-	
+	trajectory = chmc.run()
+	print len(trajectory)
+
+	chmcFile = open("chmc.pkl","wb")
+	trajFile = open("trajectory.pkl","wb")
+	pickle.dump(chmc.__dict__, chmcFile)
+	pickle.dump(trajectory, trajFile)
+	chmcFile.close()
+	trajFile.close()
