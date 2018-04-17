@@ -86,7 +86,7 @@ class CarrierHoppingMC:
 		
 		#Initialize trajectory: list of electron number, time of event and grid position
 		t = 0 #time of latest hop
-		trajectory = [ (iElectron, t, iPos) for iElectron,iPos in enumerate(iPosElectron.T) ]
+		trajectory = [ (iElectron, t, np.copy(iPos)) for iElectron,iPos in enumerate(iPosElectron.T) ]
 		
 		#Initial energy of each electron and its neighbourhood
 		#--- Fetch energy at each electron:
@@ -129,7 +129,7 @@ class CarrierHoppingMC:
 			if t > self.tMax:
 				t = self.tMax
 				#Finalize trajectory:
-				trajectory += [ (iElectron, t, iPos) for iElectron,iPos in enumerate(iPosElectron.T) ]
+				trajectory += [ (iElectron, t, np.copy(iPos)) for iElectron,iPos in enumerate(iPosElectron.T) ]
 				break
 			#--- select neighbour to hop to:
 			iNeighbor = np.searchsorted(
@@ -139,7 +139,7 @@ class CarrierHoppingMC:
 			iPosOld = iPosElectron[:,iHop]
 			iPosNew = np.mod(iPosOld + self.ir[:,iNeighbor], self.S) #Wrap with periodic boundaries			
 			iPosElectron[:,iHop] = iPosNew
-			trajectory.append([iHop, t, iPosNew])
+			trajectory.append([iHop, t, np.copy(iPosNew)])
 			if iPosNew[2] >= self.S[2] - self.irMax:
 				break #Terminate: an electron has reached end of box
 			#--- update cached energies:
