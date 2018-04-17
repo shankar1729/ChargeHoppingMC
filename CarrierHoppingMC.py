@@ -110,6 +110,7 @@ class CarrierHoppingMC:
 			- np.sum(self.safeCoulomb(rDelta), axis=0)[:,None] ) #- 1/r to the center location
 
 		#Main MC loop:
+		izMax = 0
 		while True:
 			#Calculate hopping probabilities for each electron:
 			#--- for each electron to each neighbour:
@@ -140,8 +141,11 @@ class CarrierHoppingMC:
 			iPosNew = np.mod(iPosOld + self.ir[:,iNeighbor], self.S) #Wrap with periodic boundaries			
 			iPosElectron[:,iHop] = iPosNew
 			trajectory.append([iHop, t, np.copy(iPosNew)])
-			if iPosNew[2] >= self.S[2] - self.irMax:
-				break #Terminate: an electron has reached end of box
+			if iPosNew[2] > izMax:
+				izMax = iPosNew[2]
+				print "Reached", izMax/self.h, "nm at t =", t, "s"
+				if izMax >= self.S[2] - self.irMax:
+					break #Terminate: an electron has reached end of box
 			#--- update cached energies:
 			iPosNeighborNew = iPosNew[:,None] + self.ir
 			E0electron[iHop] = self.E0[
@@ -158,8 +162,6 @@ class CarrierHoppingMC:
 			coulomb -= self.coulombLandscape(iPosElectron - iPosOld[:,None], iHop) #remove contribution from old position of iHop'th electron
 			coulomb += self.coulombLandscape(iPosElectron - iPosNew[:,None], iHop) #remove contribution from old position of iHop'th electron
 			
-			print t, np.max(iPosElectron[2])
-		
 		return trajectory
 	
 #----- Test code -----
@@ -174,9 +176,15 @@ if __name__ == "__main__":
 		"hopDistance": 1., #average hop distance in nm
 		"hopFrequency": 1e12, #attempt frequency in Hz
 		"nElectrons": 16, #number of electrons to track
+		"tMax": 1e3, #stop simulation at this time from start in seconds
 		"epsBG": 2.5, #relative permittivity of polymer
+		#--- Nano-particle parameters
 		"epsNP": 10., #relative permittivity of nanoparticles
-		"tMax": 1e3 #stop simulation at this time from start in seconds
+		"trapDepthNP": -1., #trap depth of nanoparticles in eV
+		"radiusNP": 2.5, #radius of nanoparticles in nm
+		"volFracNP": 0.004, #volume fraction of nanoparticles
+		"nClusterMu": 30, #mean number of nanoparticles in each cluster (Poisson distribution)
+		"clusterShape": "random" #one of "round", "random", "line" or "sheet"
 	}
 	chmc = CarrierHoppingMC(params)
 	trajectory = chmc.run()
