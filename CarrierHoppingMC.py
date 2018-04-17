@@ -85,8 +85,8 @@ class CarrierHoppingMC:
 		))
 		
 		#Initialize trajectory: list of electron number, time of event and grid position
-		tElectron = np.zeros(self.nElectrons) #last time at which each electron was hopped
-		trajectory = [ (iElectron, tElectron[iElectron], iPos) for iElectron,iPos in enumerate(iPosElectron.T) ]
+		t = 0 #time of latest hop
+		trajectory = [ (iElectron, t, iPos) for iElectron,iPos in enumerate(iPosElectron.T) ]
 		
 		#Initial energy of each electron and its neighbourhood
 		#--- Fetch energy at each electron:
@@ -110,7 +110,6 @@ class CarrierHoppingMC:
 			- np.sum(self.safeCoulomb(rDelta), axis=0)[:,None] ) #- 1/r to the center location
 
 		#Main MC loop:
-		t = 0 #time of latest hop
 		while True:
 			#Calculate hopping probabilities for each electron:
 			#--- for each electron to each neighbour:
@@ -122,7 +121,7 @@ class CarrierHoppingMC:
 			hopRate = np.sum(hopRateSub, axis=1) #sum over second axis = neighbors
 			
 			#Calculate time for next hop for each electron:
-			hopTime = np.random.exponential(1./hopRate) + tElectron
+			hopTime = np.random.exponential(1./hopRate) + t
 			
 			#Implement the soonest hop:
 			iHop = np.argmin(hopTime)
@@ -132,7 +131,6 @@ class CarrierHoppingMC:
 				#Finalize trajectory:
 				trajectory += [ (iElectron, t, iPos) for iElectron,iPos in enumerate(iPosElectron.T) ]
 				break
-			tElectron[iHop] = t
 			#--- select neighbour to hop to:
 			iNeighbor = np.searchsorted(
 				np.cumsum(hopRateSub[iHop]), #cumulative probability distribution
