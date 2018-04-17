@@ -4,16 +4,13 @@ import matplotlib.pyplot as plt
 import mpl_toolkits.mplot3d.axes3d as p3
 import matplotlib.animation as animation
 
-chmcFile = open('chmc.pkl')
 trajFile = open('trajectory.pkl')
-chmc = pickle.load(chmcFile)
 trajectory = pickle.load(trajFile)
-chmcFile.close()
 trajFile.close()
 
-print len(trajectory)
+nElectrons = 1 + max([event[0] for event in trajectory])
+print "Read trajectory with", len(trajectory), " hops and ", nElectrons, "electrons"
 
-nElectrons = chmc["nElectrons"]
 plt.figure(1, figsize=(10,6))
 # Iterate over all electrons and plot its displacement in z-direction
 for i in range(nElectrons):

@@ -190,9 +190,6 @@ if __name__ == "__main__":
 	trajectory = chmc.run()
 	print len(trajectory)
 
-	chmcFile = open("chmc.pkl","wb")
 	trajFile = open("trajectory.pkl","wb")
-	pickle.dump(chmc.__dict__, chmcFile)
 	pickle.dump(trajectory, trajFile)
-	chmcFile.close()
 	trajFile.close()
