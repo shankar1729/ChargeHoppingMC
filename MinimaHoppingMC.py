@@ -99,14 +99,15 @@ class MinimaHoppingMC:
 		iFirstUniq = sortIndex[np.where(pairIndexSorted[:-1]!=pairIndexSorted[1:])[0]]
 		minimaPairs = minimaPairs[:,iFirstUniq]
 		iConnection = iConnection[iFirstUniq] #now index of saddle point
+		nConnections = len(iConnection)
+		print 'nMinima:', nMinima, 'with nConnections:', nConnections
 		
 		import matplotlib.pyplot as plt
 		plt.imshow(np.reshape(self.E0,self.S)[0], cmap='Greys_r')
 		for iPair,minimaPair in enumerate(minimaPairs.T):
 			rIndex = [minimaIndex[minimaPair[0]], iConnection[iPair], minimaIndex[minimaPair[1]]]
-			print rIndex
 			plt.plot(iPosMesh[rIndex,2], iPosMesh[rIndex,1], marker='x')
-		plt.plot(iPosMesh[minimaIndex,2], iPosMesh[minimaIndex,1], 'k+', markersize=20)
+		plt.plot(iPosMesh[minimaIndex,2], iPosMesh[minimaIndex,1], 'k+')
 		plt.show()
 		exit()
 		#TODO
@@ -132,7 +133,7 @@ class MinimaHoppingMC:
 #----- Test code -----
 if __name__ == "__main__":
 	params = { 
-		"L": [ 1, 10, 10 ], #box size in nm
+		"L": [ 1, 100, 100 ], #box size in nm
 		"h": 1., #grid spacing in nm
 		"Efield": 10*0.01, #electric field in V/nm
 		"dosSigma": 0.2, #dos standard deviation in eV
