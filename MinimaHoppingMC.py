@@ -34,6 +34,8 @@ class MinimaHoppingMC:
 		#TODO add nanoparticles here / optipons for exponential instead etc.
 		
 		#Set up connectivity:
+		#neighOffsets = np.array([[0,+1,0],[0,-1,0],[0,0,+1],[0,0,-1]]) #2D test case
+		#neighOffsets = np.array([[+1,0,0],[-1,0,0],[0,+1,0],[0,-1,0],[0,0,+1],[0,0,-1]]) #3D
 		neigh1d = np.arange(-1,2)
 		neighOffsets = flattenedMesh([0], neigh1d, neigh1d) #2D test case
 		#neighOffsets = flattenedMesh(neigh1d, neigh1d, neigh1d) #3D
@@ -65,7 +67,7 @@ class MinimaHoppingMC:
 		minimaIndex = np.setdiff1d(np.arange(nGrid), np.unique(jPosIndex), assume_unique=True)
 		nMinima = len(minimaIndex)
 		#--- adjacency matrix:
-		from scipy.sparse import csr_matrix
+		from scipy.sparse import csr_matrix, diags
 		adjMat = csr_matrix((np.ones(len(iPosIndex),dtype=int), (jPosIndex,iPosIndex)), shape=(nGrid,nGrid))
 		#--- initialize minima domain matrix:
 		minMat = csr_matrix((np.ones(nMinima,dtype=int), (minimaIndex,np.arange(nMinima,dtype=int))), shape=(nGrid,nMinima))
@@ -74,12 +76,19 @@ class MinimaHoppingMC:
 		while minMat.count_nonzero():
 			minMat = adjMat * minMat
 			minMatCum += minMat
-		print minMatCum
-		
+			#Stop propagating points already connected to >=2 minima:
+			minimaCount = minMatCum.sign().sum(axis=1) #number of minima already connected to each point
+			pointWeight = np.where(minimaCount.flatten()>=2, 0, 1)
+			minMat = diags([pointWeight.flatten()], [0]) * minMat #stop propagating these rows further
+			
 		import matplotlib.pyplot as plt
-		plt.imshow(np.reshape(self.E0,self.S)[0], cmap='Greys_r')
-		plt.colorbar()
-		plt.plot(iPosMesh[minimaIndex,2], iPosMesh[minimaIndex,1], 'r+')
+		for iMinima in range(nMinima):
+			plt.figure(iMinima+1)
+			plt.imshow(np.reshape(self.E0,self.S)[0], cmap='Greys_r')
+			plt.plot(iPosMesh[minimaIndex,2], iPosMesh[minimaIndex,1], 'r+')
+			iDomain = minMatCum.getcol(iMinima).nonzero()[0]
+			plt.scatter(iPosMesh[iDomain,2], iPosMesh[iDomain,1])
+			
 		plt.show()
 		exit()
 		#TODO
