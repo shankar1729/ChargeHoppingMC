@@ -34,8 +34,6 @@ class MinimaHoppingMC:
 		#TODO add nanoparticles here / optipons for exponential instead etc.
 		
 		#Set up connectivity:
-		#neighOffsets = np.array([[0,+1,0],[0,-1,0],[0,0,+1],[0,0,-1]]) #2D test case
-		#neighOffsets = np.array([[+1,0,0],[-1,0,0],[0,+1,0],[0,-1,0],[0,0,+1],[0,0,-1]]) #3D
 		neigh1d = np.arange(-1,2)
 		neighOffsets = flattenedMesh([0], neigh1d, neigh1d) #2D test case
 		#neighOffsets = flattenedMesh(neigh1d, neigh1d, neigh1d) #3D
@@ -43,6 +41,7 @@ class MinimaHoppingMC:
 		neighOffsets = neighOffsets[np.where(np.sum(neighOffsets**2,axis=1))[0]]
 		
 		#Flattened list of grid points and neighbours:
+		print 'Constructing neighbours and adjacency:'
 		iPosMesh = flattenedMesh(np.arange(self.S[0]), np.arange(self.S[1]), np.arange(self.S[2]))
 		iPosStride = np.array([self.S[1]*self.S[2], self.S[2], 1])
 		iPosIndex = np.arange(iPosMesh.shape[0])
@@ -73,22 +72,41 @@ class MinimaHoppingMC:
 		minMat = csr_matrix((np.ones(nMinima,dtype=int), (minimaIndex,np.arange(nMinima,dtype=int))), shape=(nGrid,nMinima))
 		#--- multiply adjacency matrix repeatedly till all points covered:
 		minMatCum = minMat
-		while minMat.count_nonzero():
+		pathLength = 0
+		nPoints = nMinima
+		while nPoints:
 			minMat = adjMat * minMat
 			minMatCum += minMat
 			#Stop propagating points already connected to >=2 minima:
-			minimaCount = minMatCum.sign().sum(axis=1) #number of minima already connected to each point
-			pointWeight = np.where(minimaCount.flatten()>=2, 0, 1)
-			minMat = diags([pointWeight.flatten()], [0]) * minMat #stop propagating these rows further
-			
+			minimaCount = np.array(minMatCum.sign().sum(axis=1), dtype=int).flatten() #number of minima already connected to each point
+			pointWeight = np.where(minimaCount>=2, 0, 1)
+			minMat = diags([pointWeight], [0]) * minMat #stop propagating these rows further
+			pathLength += 1
+			nPoints = minMat.count_nonzero()
+			print '\tPath length:', pathLength, 'nPoints:', nPoints
+		
+		#Find saddle points connecting pairs of minima:
+		#--- Find pairs of minima connected by each point:
+		iNZ,iMinNZ = minMatCum.nonzero()
+		sel = np.where(iNZ[:-1]==iNZ[1:])[0] #two adjacent entries having same iNZ
+		minimaPairs = np.array([iMinNZ[sel], iMinNZ[sel+1]]) #list of connected iMinima1 and iMinima2 connected
+		minimaPairs.sort(axis=0)
+		pairIndex = nMinima*minimaPairs[0] + minimaPairs[1]
+		iConnection = iNZ[sel] #corresponding connecting point between above pairs
+		#--- Sort pairs by minima index, energy of connecting point:
+		sortIndex = np.lexsort([self.E0[iConnection], pairIndex])
+		pairIndexSorted = np.concatenate([[-1],pairIndex[sortIndex]])
+		iFirstUniq = sortIndex[np.where(pairIndexSorted[:-1]!=pairIndexSorted[1:])[0]]
+		minimaPairs = minimaPairs[:,iFirstUniq]
+		iConnection = iConnection[iFirstUniq] #now index of saddle point
+		
 		import matplotlib.pyplot as plt
-		for iMinima in range(nMinima):
-			plt.figure(iMinima+1)
-			plt.imshow(np.reshape(self.E0,self.S)[0], cmap='Greys_r')
-			plt.plot(iPosMesh[minimaIndex,2], iPosMesh[minimaIndex,1], 'r+')
-			iDomain = minMatCum.getcol(iMinima).nonzero()[0]
-			plt.scatter(iPosMesh[iDomain,2], iPosMesh[iDomain,1])
-			
+		plt.imshow(np.reshape(self.E0,self.S)[0], cmap='Greys_r')
+		for iPair,minimaPair in enumerate(minimaPairs.T):
+			rIndex = [minimaIndex[minimaPair[0]], iConnection[iPair], minimaIndex[minimaPair[1]]]
+			print rIndex
+			plt.plot(iPosMesh[rIndex,2], iPosMesh[rIndex,1], marker='x')
+		plt.plot(iPosMesh[minimaIndex,2], iPosMesh[minimaIndex,1], 'k+', markersize=20)
 		plt.show()
 		exit()
 		#TODO
