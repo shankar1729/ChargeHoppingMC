@@ -3,6 +3,22 @@
 import numpy as np
 import pickle
 
+#Profiling functions
+shouldProfile = True
+if shouldProfile:
+	import time
+	import resource
+	tPrev = time.clock()
+	def printDuration(label):
+		global tPrev
+		tCur = time.clock()
+		mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+		print 'Time('+label+'):', tCur-tPrev, 's, Mem:', mem/1024, 'MB'
+		tPrev = tCur
+else:
+	def printDuration(label):
+		pass
+
 #Unit definitions:
 kB = 0.000086174 #in eV/K
 
@@ -35,10 +51,11 @@ class MinimaHoppingMC:
 		
 		#Set up connectivity:
 		neigh1d = np.arange(-1,2)
-		neighOffsets = flattenedMesh([0], neigh1d, neigh1d) #2D test case
-		#neighOffsets = flattenedMesh(neigh1d, neigh1d, neigh1d) #3D
+		#neighOffsets = flattenedMesh([0], neigh1d, neigh1d) #2D test case
+		neighOffsets = flattenedMesh(neigh1d, neigh1d, neigh1d) #3D
 		#--- remove self:
 		neighOffsets = neighOffsets[np.where(np.sum(neighOffsets**2,axis=1))[0]]
+		printDuration('InitStart')
 		
 		#Flattened list of grid points and neighbours:
 		print 'Constructing neighbours and adjacency:'
@@ -47,29 +64,36 @@ class MinimaHoppingMC:
 		iPosIndex = np.arange(iPosMesh.shape[0])
 		self.E0 = self.E0.flatten()
 		nGrid = np.prod(self.S)
+		printDuration('InitGrid')
 		#--- neighbours
 		jPosMesh = np.reshape(iPosMesh[:,None,:] + neighOffsets[None,...], (-1,3))
 		for iDir in range(2): #wrap indices in periodic directions
 			jPosMesh[:,iDir] = np.mod(jPosMesh[:,iDir], self.S[iDir])
 		jPosIndex = np.dot(jPosMesh, iPosStride)
 		iPosIndex = np.tile(iPosIndex[:,None], [1,neighOffsets.shape[0]]).flatten() #repeat iPos to same shape
+		printDuration('InitNeigh')
 		#--- select valid neighbours that are within z range:
 		zjValid = np.where(np.logical_and(jPosMesh[:,2]>=0, jPosMesh[:,2]<self.S[2])) #z of neighbour in range
 		iPosIndex = iPosIndex[zjValid]
 		jPosIndex = jPosIndex[zjValid]
+		printDuration('InitZsel')
 		#--- select edges such that E[i] < E[j]
 		uphillEdges = np.where(self.E0[iPosIndex] < self.E0[jPosIndex])
 		iPosIndex = iPosIndex[uphillEdges]
 		jPosIndex = jPosIndex[uphillEdges]
+		printDuration('InitUphill')
 		
 		#Identify local minima and their local domains:
 		minimaIndex = np.setdiff1d(np.arange(nGrid), np.unique(jPosIndex), assume_unique=True)
 		nMinima = len(minimaIndex)
+		printDuration('InitMinima')
 		#--- adjacency matrix:
 		from scipy.sparse import csr_matrix, diags
 		adjMat = csr_matrix((np.ones(len(iPosIndex),dtype=int), (jPosIndex,iPosIndex)), shape=(nGrid,nGrid))
+		printDuration('InitAdj')
 		#--- initialize minima domain matrix:
 		minMat = csr_matrix((np.ones(nMinima,dtype=int), (minimaIndex,np.arange(nMinima,dtype=int))), shape=(nGrid,nMinima))
+		printDuration('InitMinMat')
 		#--- multiply adjacency matrix repeatedly till all points covered:
 		minMatCum = minMat
 		pathLength = 0
@@ -84,6 +108,7 @@ class MinimaHoppingMC:
 			pathLength += 1
 			nPoints = minMat.count_nonzero()
 			print '\tPath length:', pathLength, 'nPoints:', nPoints
+		printDuration('InitDomains')
 		
 		#Find saddle points connecting pairs of minima:
 		#--- Find pairs of minima connected by each point:
@@ -93,6 +118,7 @@ class MinimaHoppingMC:
 		minimaPairs.sort(axis=0)
 		pairIndex = nMinima*minimaPairs[0] + minimaPairs[1]
 		iConnection = iNZ[sel] #corresponding connecting point between above pairs
+		printDuration('InitConnections')
 		#--- Sort pairs by minima index, energy of connecting point:
 		sortIndex = np.lexsort([self.E0[iConnection], pairIndex])
 		pairIndexSorted = np.concatenate([[-1],pairIndex[sortIndex]])
@@ -100,15 +126,15 @@ class MinimaHoppingMC:
 		minimaPairs = minimaPairs[:,iFirstUniq]
 		iConnection = iConnection[iFirstUniq] #now index of saddle point
 		nConnections = len(iConnection)
+		printDuration('InitBarriers')
 		print 'nMinima:', nMinima, 'with nConnections:', nConnections
 		
+		"""
 		import matplotlib.pyplot as plt
 		plt.imshow(np.reshape(self.E0,self.S)[0], cmap='Greys_r')
-		for iPair,minimaPair in enumerate(minimaPairs.T):
-			rIndex = [minimaIndex[minimaPair[0]], iConnection[iPair], minimaIndex[minimaPair[1]]]
-			plt.plot(iPosMesh[rIndex,2], iPosMesh[rIndex,1], marker='x')
 		plt.plot(iPosMesh[minimaIndex,2], iPosMesh[minimaIndex,1], 'k+')
 		plt.show()
+		"""
 		exit()
 		#TODO
 		
@@ -133,9 +159,9 @@ class MinimaHoppingMC:
 #----- Test code -----
 if __name__ == "__main__":
 	params = { 
-		"L": [ 1, 100, 100 ], #box size in nm
+		"L": [ 50, 50, 500 ], #box size in nm
 		"h": 1., #grid spacing in nm
-		"Efield": 10*0.01, #electric field in V/nm
+		"Efield": 0.01, #electric field in V/nm
 		"dosSigma": 0.2, #dos standard deviation in eV
 		"dosMu": -0.3, #dos center in eV
 		"T": 298., #temperature in Kelvin
