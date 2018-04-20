@@ -56,8 +56,9 @@ class MinimaHoppingMC:
 		#Set up connectivity:
 		def initNeighbors():
 			neigh1d = np.arange(-1,2)
-			#neighOffsets = flattenedMesh([0], neigh1d, neigh1d) #2D test case
 			neighOffsets = flattenedMesh(neigh1d, neigh1d, neigh1d) #3D
+			#--- select close-packed (FCC) mesh neighbours:
+			neighOffsets = neighOffsets[np.where(np.mod(np.sum(neighOffsets,axis=1),2)==0)]
 			#--- remove half neighbours (prefer +z), as it will be covered by symmetry below:
 			neighStride = np.array([1,10,100])
 			return neighOffsets[np.where(np.dot(neighOffsets,neighStride)>0)[0]]
@@ -67,25 +68,30 @@ class MinimaHoppingMC:
 		print 'Constructing neighbours and adjacency:'
 		from scipy.sparse import csr_matrix, diags
 		iPosMesh = flattenedMesh(np.arange(self.S[0]), np.arange(self.S[1]), np.arange(self.S[2]))
-		iPosStride = np.array([self.S[1]*self.S[2], self.S[2], 1])
-		nGrid = np.prod(self.S)
+		#--- switch to close-packed mesh
+		fccSel = np.where(np.mod(np.sum(iPosMesh,axis=1),2)==0)[0]
+		nGrid = len(fccSel)
+		fccSelInv = np.zeros((np.prod(self.S),), dtype=int)
+		fccSelInv[fccSel] = np.arange(nGrid, dtype=int)
+		iPosMesh = iPosMesh[fccSel]
 		def initAdjacency():
 			adjMat = csr_matrix((nGrid,nGrid),dtype=np.int)
+			jPosStride = np.array([self.S[1]*self.S[2], self.S[2], 1]) #indexing stride for cubic mesh
 			for neighOffset in neighOffsets:
 				jPosMesh = iPosMesh + neighOffset[None,:]
 				#Wrap indices in periodic directions:
 				for iDir in range(2):
 					if neighOffset[iDir]<0: jPosMesh[np.where(jPosMesh[:,iDir]<0)[0],iDir] += self.S[iDir]
 					if neighOffset[iDir]>0: jPosMesh[np.where(jPosMesh[:,iDir]>=self.S[iDir])[0],iDir] -= self.S[iDir]
-				jPosIndexAll = np.dot(jPosMesh, iPosStride)
+				jPosIndexAll = np.dot(jPosMesh, jPosStride) #index into original cubic mesh (wrapped to fcc below)
 				#Handle finite boundaries in z:
 				if neighOffset[2]>0: #only need to handle +z due to choice of half neighbour set above
 					zjValid = np.where(jPosMesh[:,2]<self.S[2])[0]
-					ijPosIndex = np.vstack((zjValid, jPosIndexAll[zjValid]))
+					ijPosIndex = np.vstack((zjValid, fccSelInv[jPosIndexAll[zjValid]]))
 				else:
-					ijPosIndex = np.vstack((np.arange(len(jPosIndexAll)), jPosIndexAll))
-				#Order edges so that E[i]<E[j]:
-				swapSel = np.where(self.E0[ijPosIndex[0]] > self.E0[ijPosIndex[1]])
+					ijPosIndex = np.vstack((np.arange(nGrid,dtype=int), fccSelInv[jPosIndexAll]))
+				#Direct each edge so that E[i] > E[j]:
+				swapSel = np.where(self.E0[fccSel[ijPosIndex[0]]] < self.E0[fccSel[ijPosIndex[1]]])
 				ijPosIndex[:,swapSel] = ijPosIndex[::-1,swapSel]
 				adjMat += csr_matrix((np.ones(ijPosIndex.shape[1],dtype=int), (ijPosIndex[0],ijPosIndex[1])), shape=(nGrid,nGrid))
 			return adjMat
@@ -137,9 +143,11 @@ class MinimaHoppingMC:
 		"""
 		import matplotlib.pyplot as plt
 		plt.imshow(np.reshape(self.E0,self.S)[0], cmap='Greys_r')
-		plt.plot(iPosMesh[minimaIndex,2], iPosMesh[minimaIndex,1], 'k+')
+		yzPlaneSel = np.where(iPosMesh[minimaIndex,0]==0)[0]
+		plt.plot(iPosMesh[minimaIndex[yzPlaneSel],2], iPosMesh[minimaIndex[yzPlaneSel],1], 'r+')
 		plt.show()
 		"""
+		
 		exit()
 		#TODO
 		
