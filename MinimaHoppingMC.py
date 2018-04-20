@@ -65,12 +65,12 @@ class MinimaHoppingMC:
 		
 		#Flattened list of grid points and neighbours:
 		print 'Constructing neighbours and adjacency:'
+		from scipy.sparse import csr_matrix, diags
 		iPosMesh = flattenedMesh(np.arange(self.S[0]), np.arange(self.S[1]), np.arange(self.S[2]))
 		iPosStride = np.array([self.S[1]*self.S[2], self.S[2], 1])
 		nGrid = np.prod(self.S)
-		def initEdges():
-			iPosIndex = []
-			jPosIndex = []
+		def initAdjacency():
+			adjMat = csr_matrix((nGrid,nGrid),dtype=np.int)
 			for neighOffset in neighOffsets:
 				jPosMesh = iPosMesh + neighOffset[None,:]
 				#Wrap indices in periodic directions:
@@ -87,25 +87,15 @@ class MinimaHoppingMC:
 				#Order edges so that E[i]<E[j]:
 				swapSel = np.where(self.E0[ijPosIndex[0]] > self.E0[ijPosIndex[1]])
 				ijPosIndex[:,swapSel] = ijPosIndex[::-1,swapSel]
-				iPosIndex.append(ijPosIndex[0])
-				jPosIndex.append(ijPosIndex[1])
-			iPosIndex = np.concatenate(iPosIndex)
-			jPosIndex = np.concatenate(jPosIndex)
-			return iPosIndex, jPosIndex
-			
-		iPosIndex,jPosIndex = initEdges()
-		printDuration('InitEdges')
-		#print len(iPosIndex), len(jPosIndex)
-		#exit()
+				adjMat += csr_matrix((np.ones(ijPosIndex.shape[1],dtype=int), (ijPosIndex[0],ijPosIndex[1])), shape=(nGrid,nGrid))
+			return adjMat
+		adjMat = initAdjacency()
+		printDuration('InitAdj')
 		
 		#Identify local minima and their local domains:
-		minimaIndex = np.setdiff1d(np.arange(nGrid), np.unique(jPosIndex), assume_unique=True)
+		minimaIndex = np.where(adjMat.sum(axis=1)==0)[0]
 		nMinima = len(minimaIndex)
 		printDuration('InitMinima')
-		#--- adjacency matrix:
-		from scipy.sparse import csr_matrix, diags
-		adjMat = csr_matrix((np.ones(len(iPosIndex),dtype=int), (jPosIndex,iPosIndex)), shape=(nGrid,nGrid))
-		printDuration('InitAdj')
 		#--- initialize minima domain matrix:
 		minMat = csr_matrix((np.ones(nMinima,dtype=int), (minimaIndex,np.arange(nMinima,dtype=int))), shape=(nGrid,nMinima))
 		printDuration('InitMinMat')
