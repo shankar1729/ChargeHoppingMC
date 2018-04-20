@@ -42,46 +42,61 @@ class MinimaHoppingMC:
 		self.L = self.h * self.S #box size rounded to integer number of grid points
 		
 		#Initial energy landscape (without inter-electron repulsions):
-		#--- add polymer internal DOS
-		self.E0 = params["dosMu"] + params["dosSigma"]*np.random.randn(*self.S)
-		#--- add electric field contributions
-		z = self.h * np.arange(self.S[2])
-		self.E0 -= params["Efield"] * z[None,None,:]
-		#TODO add nanoparticles here / optipons for exponential instead etc.
+		def initEnergyLandscape():
+			#--- add polymer internal DOS
+			E0 = params["dosMu"] + params["dosSigma"]*np.random.randn(*self.S)
+			#--- add electric field contributions
+			z = self.h * np.arange(self.S[2])
+			E0 -= params["Efield"] * z[None,None,:]
+			#TODO add nanoparticles here / options for exponential instead etc.
+			return E0
+		self.E0 = initEnergyLandscape().flatten()
+		printDuration('InitE0')
 		
 		#Set up connectivity:
-		neigh1d = np.arange(-1,2)
-		#neighOffsets = flattenedMesh([0], neigh1d, neigh1d) #2D test case
-		neighOffsets = flattenedMesh(neigh1d, neigh1d, neigh1d) #3D
-		#--- remove self:
-		neighOffsets = neighOffsets[np.where(np.sum(neighOffsets**2,axis=1))[0]]
-		printDuration('InitStart')
+		def initNeighbors():
+			neigh1d = np.arange(-1,2)
+			#neighOffsets = flattenedMesh([0], neigh1d, neigh1d) #2D test case
+			neighOffsets = flattenedMesh(neigh1d, neigh1d, neigh1d) #3D
+			#--- remove half neighbours (prefer +z), as it will be covered by symmetry below:
+			neighStride = np.array([1,10,100])
+			return neighOffsets[np.where(np.dot(neighOffsets,neighStride)>0)[0]]
+		neighOffsets = initNeighbors()
 		
 		#Flattened list of grid points and neighbours:
 		print 'Constructing neighbours and adjacency:'
 		iPosMesh = flattenedMesh(np.arange(self.S[0]), np.arange(self.S[1]), np.arange(self.S[2]))
 		iPosStride = np.array([self.S[1]*self.S[2], self.S[2], 1])
-		iPosIndex = np.arange(iPosMesh.shape[0])
-		self.E0 = self.E0.flatten()
 		nGrid = np.prod(self.S)
-		printDuration('InitGrid')
-		#--- neighbours
-		jPosMesh = np.reshape(iPosMesh[:,None,:] + neighOffsets[None,...], (-1,3))
-		for iDir in range(2): #wrap indices in periodic directions
-			jPosMesh[:,iDir] = np.mod(jPosMesh[:,iDir], self.S[iDir])
-		jPosIndex = np.dot(jPosMesh, iPosStride)
-		iPosIndex = np.tile(iPosIndex[:,None], [1,neighOffsets.shape[0]]).flatten() #repeat iPos to same shape
-		printDuration('InitNeigh')
-		#--- select valid neighbours that are within z range:
-		zjValid = np.where(np.logical_and(jPosMesh[:,2]>=0, jPosMesh[:,2]<self.S[2])) #z of neighbour in range
-		iPosIndex = iPosIndex[zjValid]
-		jPosIndex = jPosIndex[zjValid]
-		printDuration('InitZsel')
-		#--- select edges such that E[i] < E[j]
-		uphillEdges = np.where(self.E0[iPosIndex] < self.E0[jPosIndex])
-		iPosIndex = iPosIndex[uphillEdges]
-		jPosIndex = jPosIndex[uphillEdges]
-		printDuration('InitUphill')
+		def initEdges():
+			iPosIndex = []
+			jPosIndex = []
+			for neighOffset in neighOffsets:
+				jPosMesh = iPosMesh + neighOffset[None,:]
+				#Wrap indices in periodic directions:
+				for iDir in range(2):
+					if neighOffset[iDir]<0: jPosMesh[np.where(jPosMesh[:,iDir]<0)[0],iDir] += self.S[iDir]
+					if neighOffset[iDir]>0: jPosMesh[np.where(jPosMesh[:,iDir]>=self.S[iDir])[0],iDir] -= self.S[iDir]
+				jPosIndexAll = np.dot(jPosMesh, iPosStride)
+				#Handle finite boundaries in z:
+				if neighOffset[2]>0: #only need to handle +z due to choice of half neighbour set above
+					zjValid = np.where(jPosMesh[:,2]<self.S[2])[0]
+					ijPosIndex = np.vstack((zjValid, jPosIndexAll[zjValid]))
+				else:
+					ijPosIndex = np.vstack((np.arange(len(jPosIndexAll)), jPosIndexAll))
+				#Order edges so that E[i]<E[j]:
+				swapSel = np.where(self.E0[ijPosIndex[0]] > self.E0[ijPosIndex[1]])
+				ijPosIndex[:,swapSel] = ijPosIndex[::-1,swapSel]
+				iPosIndex.append(ijPosIndex[0])
+				jPosIndex.append(ijPosIndex[1])
+			iPosIndex = np.concatenate(iPosIndex)
+			jPosIndex = np.concatenate(jPosIndex)
+			return iPosIndex, jPosIndex
+			
+		iPosIndex,jPosIndex = initEdges()
+		printDuration('InitEdges')
+		#print len(iPosIndex), len(jPosIndex)
+		#exit()
 		
 		#Identify local minima and their local domains:
 		minimaIndex = np.setdiff1d(np.arange(nGrid), np.unique(jPosIndex), assume_unique=True)
