@@ -37,20 +37,20 @@ class MinimaHoppingMC:
 	def __init__(self, params):
 		
 		#Initialize box and grid:
-		self.h = params["h"] #grid spacing
-		self.S = np.round(np.array(params["L"])/self.h).astype(int) #number of grid points
-		self.L = self.h * self.S #box size rounded to integer number of grid points
+		h = params["h"] #grid spacing
+		S = np.round(np.array(params["L"])/h).astype(int) #number of grid points
+		L = h * S #box size rounded to integer number of grid points
 		
 		#Initial energy landscape (without inter-electron repulsions):
 		def initEnergyLandscape():
 			#--- add polymer internal DOS
-			E0 = params["dosMu"] + params["dosSigma"]*np.random.randn(*self.S)
+			E0 = params["dosMu"] + params["dosSigma"]*np.random.randn(*S)
 			#--- add electric field contributions
-			z = self.h * np.arange(self.S[2])
+			z = h * np.arange(S[2])
 			E0 -= params["Efield"] * z[None,None,:]
 			#TODO add nanoparticles here / options for exponential instead etc.
 			return E0
-		self.E0 = initEnergyLandscape().flatten()
+		E0 = initEnergyLandscape().flatten()
 		printDuration('InitE0')
 		
 		#Set up connectivity:
@@ -67,31 +67,32 @@ class MinimaHoppingMC:
 		#Flattened list of grid points and neighbours:
 		print 'Constructing neighbours and adjacency:'
 		from scipy.sparse import csr_matrix, diags
-		iPosMesh = flattenedMesh(np.arange(self.S[0]), np.arange(self.S[1]), np.arange(self.S[2]))
+		iPosMesh = flattenedMesh(np.arange(S[0]), np.arange(S[1]), np.arange(S[2]))
 		#--- switch to close-packed mesh
 		fccSel = np.where(np.mod(np.sum(iPosMesh,axis=1),2)==0)[0]
 		nGrid = len(fccSel)
-		fccSelInv = np.zeros((np.prod(self.S),), dtype=int)
-		fccSelInv[fccSel] = np.arange(nGrid, dtype=int)
 		iPosMesh = iPosMesh[fccSel]
+		E0 = E0[fccSel]
 		def initAdjacency():
 			adjMat = csr_matrix((nGrid,nGrid),dtype=np.int)
-			jPosStride = np.array([self.S[1]*self.S[2], self.S[2], 1]) #indexing stride for cubic mesh
+			jPosStride = np.array([S[1]*S[2], S[2], 1]) #indexing stride for cubic mesh
+			fccSelInv = np.zeros((np.prod(S),), dtype=int) #initialize inverse of fccSel ...
+			fccSelInv[fccSel] = np.arange(nGrid, dtype=int) #... for use in indexing below
 			for neighOffset in neighOffsets:
 				jPosMesh = iPosMesh + neighOffset[None,:]
 				#Wrap indices in periodic directions:
 				for iDir in range(2):
-					if neighOffset[iDir]<0: jPosMesh[np.where(jPosMesh[:,iDir]<0)[0],iDir] += self.S[iDir]
-					if neighOffset[iDir]>0: jPosMesh[np.where(jPosMesh[:,iDir]>=self.S[iDir])[0],iDir] -= self.S[iDir]
+					if neighOffset[iDir]<0: jPosMesh[np.where(jPosMesh[:,iDir]<0)[0],iDir] += S[iDir]
+					if neighOffset[iDir]>0: jPosMesh[np.where(jPosMesh[:,iDir]>=S[iDir])[0],iDir] -= S[iDir]
 				jPosIndexAll = np.dot(jPosMesh, jPosStride) #index into original cubic mesh (wrapped to fcc below)
 				#Handle finite boundaries in z:
 				if neighOffset[2]>0: #only need to handle +z due to choice of half neighbour set above
-					zjValid = np.where(jPosMesh[:,2]<self.S[2])[0]
+					zjValid = np.where(jPosMesh[:,2]<S[2])[0]
 					ijPosIndex = np.vstack((zjValid, fccSelInv[jPosIndexAll[zjValid]]))
 				else:
 					ijPosIndex = np.vstack((np.arange(nGrid,dtype=int), fccSelInv[jPosIndexAll]))
 				#Direct each edge so that E[i] > E[j]:
-				swapSel = np.where(self.E0[fccSel[ijPosIndex[0]]] < self.E0[fccSel[ijPosIndex[1]]])
+				swapSel = np.where(E0[ijPosIndex[0]] < E0[ijPosIndex[1]])
 				ijPosIndex[:,swapSel] = ijPosIndex[::-1,swapSel]
 				adjMat += csr_matrix((np.ones(ijPosIndex.shape[1],dtype=int), (ijPosIndex[0],ijPosIndex[1])), shape=(nGrid,nGrid))
 			return adjMat
@@ -131,7 +132,7 @@ class MinimaHoppingMC:
 		iConnection = iNZ[sel] #corresponding connecting point between above pairs
 		printDuration('InitConnections')
 		#--- Sort pairs by minima index, energy of connecting point:
-		sortIndex = np.lexsort([self.E0[iConnection], pairIndex])
+		sortIndex = np.lexsort([E0[iConnection], pairIndex])
 		pairIndexSorted = np.concatenate([[-1],pairIndex[sortIndex]])
 		iFirstUniq = sortIndex[np.where(pairIndexSorted[:-1]!=pairIndexSorted[1:])[0]]
 		minimaPairs = minimaPairs[:,iFirstUniq]
@@ -142,7 +143,10 @@ class MinimaHoppingMC:
 		
 		"""
 		import matplotlib.pyplot as plt
-		plt.imshow(np.reshape(self.E0,self.S)[0], cmap='Greys_r')
+		E0mesh = np.zeros((S[1],S[2]))
+		yzPlaneSel = np.where(iPosMesh[:,0]==0)[0]
+		E0mesh[iPosMesh[yzPlaneSel,1],iPosMesh[yzPlaneSel,2]] = E0[yzPlaneSel]
+		plt.imshow(E0mesh, cmap='Greys_r')
 		yzPlaneSel = np.where(iPosMesh[minimaIndex,0]==0)[0]
 		plt.plot(iPosMesh[minimaIndex[yzPlaneSel],2], iPosMesh[minimaIndex[yzPlaneSel],1], 'r+')
 		plt.show()
@@ -155,7 +159,7 @@ class MinimaHoppingMC:
 		self.nElectrons = params["nElectrons"]
 		self.tMax = params["tMax"]
 		self.beta = 1./(kB * params["T"])
-		self.hopFrequency = params["hopFrequency"]
+		hopFrequency = params["hopFrequency"]
 		self.coulombPrefac = 1.44 / params["epsBG"] #prefactor to 1/r in energy [in eV] of two electrons separated by r [in nm]
 	
 	
