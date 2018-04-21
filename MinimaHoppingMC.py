@@ -40,6 +40,8 @@ class MinimaHoppingMC:
 		h = params["h"] #grid spacing
 		S = np.round(np.array(params["L"])/h).astype(int) #number of grid points
 		L = h * S #box size rounded to integer number of grid points
+		kT = kB * params["T"]
+		hopDistance = params["hopDistance"]
 		
 		#Initial energy landscape (without inter-electron repulsions):
 		def initEnergyLandscape():
@@ -133,7 +135,8 @@ class MinimaHoppingMC:
 		iNZ,iMinNZ = minMatCum.nonzero()
 		sel = np.where(iNZ[:-1]==iNZ[1:])[0] #two adjacent entries having same iNZ
 		minimaPairs = np.array([iMinNZ[sel], iMinNZ[sel+1]]) #list of connected iMinima1 and iMinima2 connected
-		minimaPairs.sort(axis=0)
+		swapSel = np.where(E0[minimaIndex[minimaPairs[0]]] < E0[minimaIndex[minimaPairs[1]]])[0]
+		minimaPairs[:,swapSel] = minimaPairs[::-1,swapSel] #in each pair of minima, put higher energy first
 		pairIndex = nMinima*minimaPairs[0] + minimaPairs[1]
 		iConnection = iNZ[sel] #corresponding connecting point between above pairs
 		printDuration('InitConnections')
@@ -143,9 +146,40 @@ class MinimaHoppingMC:
 		iFirstUniq = sortIndex[np.where(pairIndexSorted[:-1]!=pairIndexSorted[1:])[0]]
 		minimaPairs = minimaPairs[:,iFirstUniq]
 		iConnection = iConnection[iFirstUniq] #now index of saddle point
-		nConnections = len(iConnection)
 		printDuration('InitBarriers')
-		print 'nMinima:', nMinima, 'with nConnections:', nConnections
+		print 'nMinima:', nMinima, 'with nConnections:', len(iConnection)
+		#--- Calculate barrier energies and "entropies" (used to account for nearer barriers reached more easily):
+		def getBarrierES():
+			barrierDisp = iPosMesh[iConnection] - iPosMesh[minimaIndex[minimaPairs[0]]] #displacement to barriers
+			for iDir in range(2): #wrap periodic directions
+				barrierDisp[np.where(barrierDisp[:,iDir]<-0.5*S[iDir])[0],iDir] += S[iDir]
+				barrierDisp[np.where(barrierDisp[:,iDir]>+0.5*S[iDir])[0],iDir] -= S[iDir]
+			Sbarrier = -np.log(np.sum(barrierDisp**2, axis=1)/hopDistance**2)
+			Ebarrier = E0[iConnection] - E0[minimaIndex[minimaPairs[0]]]
+			return Ebarrier, Sbarrier
+		Ebarrier,Sbarrier = getBarrierES()
+		#--- Prune minima with too low barriers (<~ kT):
+		print 'Pruning low barriers:'
+		connPrune = np.where(Ebarrier < -kT*Sbarrier)[0]
+		connKeep = np.where(Ebarrier >= -kT*Sbarrier)[0]
+		#----- Replace higher energy minima with lower energy one along each pruned connection:
+		while len(np.intersect1d(minimaPairs[0,connPrune], minimaPairs[1,connPrune])):
+			replaceMap = np.arange(nMinima, dtype=int)
+			replaceMap[minimaPairs[0,connPrune]] = minimaPairs[1,connPrune]
+			minimaPairs[1,connPrune] = replaceMap[minimaPairs[1,connPrune]]
+		minKeep = np.setdiff1d(np.arange(nMinima), minimaPairs[0,connPrune])
+		replaceMap = np.arange(nMinima, dtype=int)
+		replaceMap[minKeep] = np.arange(len(minKeep),dtype=int) #now with renumbering to account for removed minima
+		replaceMap[minimaPairs[0,connPrune]] = replaceMap[minimaPairs[1,connPrune]] #now all in range [0,len(minKeep))
+		#----- Apply replacements:
+		minimaIndex = minimaIndex[minKeep]
+		nMinima = len(minKeep)
+		minimaStart = replaceMap[minimaStart]
+		minimaStop = replaceMap[minimaStop]
+		minimaPairs = replaceMap[minimaPairs[:,connKeep]]
+		iConnection = iConnection[connKeep]
+		printDuration('InitPrune')
+		print 'nMinima:', nMinima, 'with nConnections:', len(iConnection)
 		
 		"""
 		#Debug code to plot x=0 yz-plane slice of energies and minima:
@@ -160,7 +194,7 @@ class MinimaHoppingMC:
 		plt.plot(iPosMesh[minimaIndex[minimaStart[yzPlaneEndSel]],2], iPosMesh[minimaIndex[minimaStart[yzPlaneEndSel]],1], 'b+')
 		yzPlaneEndSel = np.where(iPosMesh[minimaIndex[minimaStop],0]==0)[0]
 		plt.plot(iPosMesh[minimaIndex[minimaStop[yzPlaneEndSel]],2], iPosMesh[minimaIndex[minimaStop[yzPlaneEndSel]],1], 'g+')
-		plt.show()
+		plt.show(); exit()
 		"""
 		
 		#Reduce problem purely to graph of minima connected through energy barriers:
@@ -168,8 +202,8 @@ class MinimaHoppingMC:
 		minimaPairs = np.hstack((minimaPairs,minimaPairs[::-1]))
 		iConnection = np.hstack((iConnection,iConnection))
 		#--- sort connections by first minima index and energy barrier:
-		Ebarrier = E0[iConnection] - E0[minimaIndex[minimaPairs[0]]]
-		sortIndex = np.lexsort((minimaPairs[0], Ebarrier))
+		Ebarrier,Sbarrier = getBarrierES()
+		sortIndex = np.lexsort((Ebarrier, minimaPairs[0]))
 		minimaPairs = minimaPairs[:,sortIndex]
 		iConnection = iConnection[sortIndex]
 		#--- start indices of each first minima (now contiguous) in above array
@@ -197,7 +231,7 @@ class MinimaHoppingMC:
 		#Other parameters:
 		self.nElectrons = params["nElectrons"]
 		self.tMax = params["tMax"]
-		self.beta = 1./(kB * params["T"])
+		self.beta = 1./kT
 		hopFrequency = params["hopFrequency"]
 		self.coulombPrefac = 1.44 / params["epsBG"] #prefactor to 1/r in energy [in eV] of two electrons separated by r [in nm]
 	
