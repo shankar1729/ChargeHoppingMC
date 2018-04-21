@@ -158,11 +158,12 @@ class MinimaHoppingMC:
 			Ebarrier = E0[iConnection] - E0[minimaIndex[minimaPairs[0]]]
 			return Ebarrier, Sbarrier
 		Ebarrier,Sbarrier = getBarrierES()
-		#--- Prune minima with too low barriers (<~ kT):
+		
+		#Prune minima with too low barriers (<~ kT):
 		print 'Pruning low barriers:'
 		connPrune = np.where(Ebarrier < -kT*Sbarrier)[0]
 		connKeep = np.where(Ebarrier >= -kT*Sbarrier)[0]
-		#----- Replace higher energy minima with lower energy one along each pruned connection:
+		#--- Replace higher energy minima with lower energy one along each pruned connection:
 		while len(np.intersect1d(minimaPairs[0,connPrune], minimaPairs[1,connPrune])):
 			replaceMap = np.arange(nMinima, dtype=int)
 			replaceMap[minimaPairs[0,connPrune]] = minimaPairs[1,connPrune]
@@ -171,7 +172,7 @@ class MinimaHoppingMC:
 		replaceMap = np.arange(nMinima, dtype=int)
 		replaceMap[minKeep] = np.arange(len(minKeep),dtype=int) #now with renumbering to account for removed minima
 		replaceMap[minimaPairs[0,connPrune]] = replaceMap[minimaPairs[1,connPrune]] #now all in range [0,len(minKeep))
-		#----- Apply replacements:
+		#--- Apply replacements:
 		minimaIndex = minimaIndex[minKeep]
 		nMinima = len(minKeep)
 		minimaStart = replaceMap[minimaStart]
@@ -203,10 +204,25 @@ class MinimaHoppingMC:
 		iConnection = np.hstack((iConnection,iConnection))
 		#--- sort connections by first minima index and energy barrier:
 		Ebarrier,Sbarrier = getBarrierES()
-		sortIndex = np.lexsort((Ebarrier, minimaPairs[0]))
+		Abarrier = Ebarrier - kT*Sbarrier
+		sortIndex = np.lexsort((Abarrier, minimaPairs[0]))
 		minimaPairs = minimaPairs[:,sortIndex]
 		iConnection = iConnection[sortIndex]
+		Abarrier = Abarrier[sortIndex]
+		Ebarrier = Ebarrier[sortIndex]
+		Sbarrier = Sbarrier[sortIndex]
 		#--- start indices of each first minima (now contiguous) in above array
+		mPadded = np.hstack(([-1],minimaPairs[0]))
+		startIndex = np.where(mPadded[:-1]!=mPadded[1:])[0]
+		#--- remove connections which are extremely improbable from each minima:
+		typDegree = len(np.where(Abarrier - Abarrier[startIndex[minimaPairs[0]]] < 7*kT)[0])*(1./nMinima)  #rest will have probability < exp(-7) ~ 0.1%
+		maxDegree = int(2*typDegree)
+		connKeep = np.where(np.arange(len(iConnection),dtype=int) - startIndex[minimaPairs[0]] < maxDegree)[0] #truncate degree of connectivity to maxDegree
+		minimaPairs = minimaPairs[:,connKeep]
+		iConnection = iConnection[connKeep]
+		Abarrier = Abarrier[connKeep]
+		Ebarrier = Ebarrier[connKeep]
+		Sbarrier = Sbarrier[connKeep]
 		mPadded = np.hstack(([-1],minimaPairs[0]))
 		startIndex = np.where(mPadded[:-1]!=mPadded[1:])[0]
 		#--- determine degrees of connectivity of each minima:
