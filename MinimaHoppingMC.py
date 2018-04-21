@@ -148,6 +148,7 @@ class MinimaHoppingMC:
 		print 'nMinima:', nMinima, 'with nConnections:', nConnections
 		
 		"""
+		#Debug code to plot x=0 yz-plane slice of energies and minima:
 		import matplotlib.pyplot as plt
 		E0mesh = np.zeros((S[1],S[2]))
 		yzPlaneSel = np.where(iPosMesh[:,0]==0)[0]
@@ -162,6 +163,34 @@ class MinimaHoppingMC:
 		plt.show()
 		"""
 		
+		#Reduce problem purely to graph of minima connected through energy barriers:
+		#--- add opposite direction connections between minima:
+		minimaPairs = np.hstack((minimaPairs,minimaPairs[::-1]))
+		iConnection = np.hstack((iConnection,iConnection))
+		#--- sort connections by first minima index and energy barrier:
+		Ebarrier = E0[iConnection] - E0[minimaIndex[minimaPairs[0]]]
+		sortIndex = np.lexsort((minimaPairs[0], Ebarrier))
+		minimaPairs = minimaPairs[:,sortIndex]
+		iConnection = iConnection[sortIndex]
+		#--- start indices of each first minima (now contiguous) in above array
+		mPadded = np.hstack(([-1],minimaPairs[0]))
+		startIndex = np.where(mPadded[:-1]!=mPadded[1:])[0]
+		#--- determine degrees of connectivity of each minima:
+		mDegrees = np.hstack((startIndex[1:]-startIndex[:-1], len(iConnection)-startIndex[-1]))
+		print 'Degree of connectivity: min:', np.min(mDegrees), 'max:', np.max(mDegrees), 'mean:', np.mean(mDegrees)
+		print 'Energy barriers [eV]: min:', np.min(Ebarrier), 'max:', np.max(Ebarrier), 'mean:', np.mean(Ebarrier)
+		exit()
+		#--- find maximum degree of any 
+		#--- find an unused point for dummy non-connections used below
+		iEmax = np.argmax(E0) #max value will not be a minima or saddle point
+		E0[iEmax] = np.Inf
+		iConnection = np.hstack((iConnection,[iEmax]))
+		#--- energies and positions of graph nodes
+		self.E0m = E0[minimaIndex] #E0 at the location of the minima
+		self.E0b = E0[iConnection] #E0 at the barrier point connecting each pair of minima
+		self.iPosm = iPosMesh[minimaIndex] #locations of the minima
+		self.iPosb = iPosMesh[iConnection] #locations of the barrier points connecting each pair of minima
+		print self.E0m.shape, self.E0b.shape, self.iPosb.shape, self.iPosm.shape
 		exit()
 		#TODO
 		
