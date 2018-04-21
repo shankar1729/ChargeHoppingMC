@@ -123,6 +123,12 @@ class MinimaHoppingMC:
 		printDuration('InitDomains')
 		
 		#Find saddle points connecting pairs of minima:
+		#--- Find minima whose domains contain z=0 (electrons will be injected here):
+		zSel = np.where(iPosMesh[:,2]==0, 1, 0)
+		minimaStart = np.where(minMatCum.T * zSel)[0]
+		#--- Find minima whose domains contain z=zmax (electron trajectories will end here):
+		zSel = np.where(iPosMesh[:,2]==S[2]-1, 1, 0)
+		minimaStop = np.where(minMatCum.T * zSel)[0]
 		#--- Find pairs of minima connected by each point:
 		iNZ,iMinNZ = minMatCum.nonzero()
 		sel = np.where(iNZ[:-1]==iNZ[1:])[0] #two adjacent entries having same iNZ
@@ -149,6 +155,10 @@ class MinimaHoppingMC:
 		plt.imshow(E0mesh, cmap='Greys_r')
 		yzPlaneSel = np.where(iPosMesh[minimaIndex,0]==0)[0]
 		plt.plot(iPosMesh[minimaIndex[yzPlaneSel],2], iPosMesh[minimaIndex[yzPlaneSel],1], 'r+')
+		yzPlaneEndSel = np.where(iPosMesh[minimaIndex[minimaStart],0]==0)[0]
+		plt.plot(iPosMesh[minimaIndex[minimaStart[yzPlaneEndSel]],2], iPosMesh[minimaIndex[minimaStart[yzPlaneEndSel]],1], 'b+')
+		yzPlaneEndSel = np.where(iPosMesh[minimaIndex[minimaStop],0]==0)[0]
+		plt.plot(iPosMesh[minimaIndex[minimaStop[yzPlaneEndSel]],2], iPosMesh[minimaIndex[minimaStop[yzPlaneEndSel]],1], 'g+')
 		plt.show()
 		"""
 		
