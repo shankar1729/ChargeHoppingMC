@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 from common import *
 from minimaGraph import *
-import multiprocessing as mp
-import itertools
 
 class MinimaHoppingMC:
 	
@@ -55,6 +53,7 @@ class MinimaHoppingMC:
 	Run one complete MC simulation and return trajectory (jump times and positions for each electron)
 	"""
 	def run(self, iRun=0):
+		
 		print 'Starting MC run', iRun
 		#Inject electrons in randomly shozen z=0 connected minima:
 		iMinima = self.minimaStart[np.random.permutation(len(self.minimaStart))[:self.nElectrons]]
@@ -116,7 +115,7 @@ class MinimaHoppingMC:
 #----- Test code -----
 if __name__ == "__main__":
 	params = { 
-		"L": [ 30, 30, 1000 ], #box size in nm
+		"L": [ 50, 50, 1000 ], #box size in nm
 		"h": 1., #grid spacing in nm
 		"Efield": 0.01, #electric field in V/nm
 		"dosSigma": 0.1, #dos standard deviation in eV
@@ -126,7 +125,7 @@ if __name__ == "__main__":
 		"hopFrequency": 1e12, #attempt frequency in Hz
 		"nElectrons": 16, #number of electrons to track
 		"maxHops": 20000, #maximum hops per MC runs
-		"nRuns": 2, #number of MC runs
+		"nRuns": 16, #number of MC runs
 		"tMax": 1e3, #stop simulation at this time from start in seconds
 		"epsBG": 2.5, #relative permittivity of polymer
 		#--- Nano-particle parameters
@@ -140,6 +139,5 @@ if __name__ == "__main__":
 	mhmc = MinimaHoppingMC(params)
 	
 	nRuns = params["nRuns"]
-	pool = mp.Pool(processes=2)
-	trajectory = np.concatenate(map(mhmc.run, range(nRuns))) #Merge trajectories
+	trajectory = np.concatenate(parallelMap(mhmc.run, cpu_count(), range(nRuns))) #Run in parallel and merge trajectories
 	np.savetxt("trajectory.dat", trajectory, fmt="%d %e %d %d %d", header="iElectron t[s] ix iy iz") #Save trajectories together
