@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 from common import *
 from minimaGraph import *
-import pickle
+import multiprocessing as mp
+import itertools
 
 class MinimaHoppingMC:
 	
@@ -53,14 +54,15 @@ class MinimaHoppingMC:
 	"""
 	Run one complete MC simulation and return trajectory (jump times and positions for each electron)
 	"""
-	def run(self):
-		print '\nStarting MC run'
+	def run(self, iRun=0):
+		print 'Starting MC run', iRun
 		#Inject electrons in randomly shozen z=0 connected minima:
 		iMinima = self.minimaStart[np.random.permutation(len(self.minimaStart))[:self.nElectrons]]
 		
 		#Initialize trajectory: list of electron number, time of event and grid position
 		t = 0 #time of latest hop
-		trajectory = [ (iElectron, t, self.iPosMinima[iMinimum]) for iElectron,iMinimum in enumerate(iMinima) ]
+		nElectronOffset = iRun*self.nElectrons
+		trajectory = [ (iElectron+nElectronOffset, t) + tuple(self.iPosMinima[iMinimum]) for iElectron,iMinimum in enumerate(iMinima) ]
 		
 		#Initial energy of each electron and its neighbourhood
 		Abarrier0 = self.Abarrier0[iMinima] #dimensions: [nElectrons,nConnections]
@@ -84,7 +86,7 @@ class MinimaHoppingMC:
 			if t > self.tMax:
 				t = self.tMax
 				#Finalize trajectory:
-				trajectory += [ (iElectron, t, self.iPosMinima[iMinimum]) for iElectron,iMinimum in enumerate(iMinima) ]
+				trajectory += [ (iElectron+nElectronOffset, t) + tuple(self.iPosMinima[iMinimum]) for iElectron,iMinimum in enumerate(iMinima) ]
 				break
 			#--- select neighbour to hop to:
 			iNeighbor = np.searchsorted(
@@ -95,10 +97,10 @@ class MinimaHoppingMC:
 			jMinimaHop = self.jMinima[iMinima[iHop],iNeighbor]
 			iMinima[iHop] = jMinimaHop
 			iPosNew = self.iPosMinima[jMinimaHop]
-			trajectory.append([iHop, t, iPosNew])
+			trajectory.append((iHop+nElectronOffset, t) + tuple(iPosNew))
 			if iPosNew[2] > izMax:
 				izMax = iPosNew[2]
-				print "Reached", izMax*self.h, "nm at t =", t, "s"
+				print "Run", iRun, "reached", izMax*self.h, "nm at t =", t, "s"
 			if np.in1d(jMinimaHop, self.minimaStop):
 				break #Terminate: an electron has reached end of box
 			#--- update cached energies:
@@ -108,14 +110,13 @@ class MinimaHoppingMC:
 			#--- update Coulomb energies of all other electrons:
 			#TODO
 		
-		print 'End MC run; trajectory length:', len(trajectory), 'events'
-		return trajectory
-	
+		print 'End MC run', iRun, ' with trajectory length:', len(trajectory), 'events'
+		return np.array(trajectory, dtype=np.dtype('i8,f8,i8,i8,i8'))
 
 #----- Test code -----
 if __name__ == "__main__":
 	params = { 
-		"L": [ 100, 100, 1000 ], #box size in nm
+		"L": [ 30, 30, 1000 ], #box size in nm
 		"h": 1., #grid spacing in nm
 		"Efield": 0.01, #electric field in V/nm
 		"dosSigma": 0.1, #dos standard deviation in eV
@@ -124,7 +125,8 @@ if __name__ == "__main__":
 		"hopDistance": 1., #average hop distance in nm
 		"hopFrequency": 1e12, #attempt frequency in Hz
 		"nElectrons": 16, #number of electrons to track
-		"maxHops": 30000, #maximum MC steps
+		"maxHops": 20000, #maximum hops per MC runs
+		"nRuns": 2, #number of MC runs
 		"tMax": 1e3, #stop simulation at this time from start in seconds
 		"epsBG": 2.5, #relative permittivity of polymer
 		#--- Nano-particle parameters
@@ -136,8 +138,8 @@ if __name__ == "__main__":
 		"clusterShape": "random" #one of "round", "random", "line" or "sheet"
 	}
 	mhmc = MinimaHoppingMC(params)
-	trajectory = mhmc.run()
 	
-	trajFile = open("trajectory.pkl","wb")
-	pickle.dump(trajectory, trajFile)
-	trajFile.close()
+	nRuns = params["nRuns"]
+	pool = mp.Pool(processes=2)
+	trajectory = np.concatenate(map(mhmc.run, range(nRuns))) #Merge trajectories
+	np.savetxt("trajectory.dat", trajectory, fmt="%d %e %d %d %d", header="iElectron t[s] ix iy iz") #Save trajectories together

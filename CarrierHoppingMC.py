@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 from common import *
-import pickle
 
 class CarrierHoppingMC:
 	
@@ -82,7 +81,7 @@ class CarrierHoppingMC:
 		
 		#Initialize trajectory: list of electron number, time of event and grid position
 		t = 0 #time of latest hop
-		trajectory = [ (iElectron, t, np.copy(iPos)) for iElectron,iPos in enumerate(iPosElectron.T) ]
+		trajectory = [ (iElectron, t) + tuple(iPos) for iElectron,iPos in enumerate(iPosElectron.T) ]
 		
 		#Initial energy of each electron and its neighbourhood
 		#--- Fetch energy at each electron:
@@ -126,7 +125,7 @@ class CarrierHoppingMC:
 			if t > self.tMax:
 				t = self.tMax
 				#Finalize trajectory:
-				trajectory += [ (iElectron, t, np.copy(iPos)) for iElectron,iPos in enumerate(iPosElectron.T) ]
+				trajectory += [ (iElectron, t) + tuple(iPos) for iElectron,iPos in enumerate(iPosElectron.T) ]
 				break
 			#--- select neighbour to hop to:
 			iNeighbor = np.searchsorted(
@@ -136,7 +135,7 @@ class CarrierHoppingMC:
 			iPosOld = iPosElectron[:,iHop]
 			iPosNew = np.mod(iPosOld + self.ir[:,iNeighbor], self.S) #Wrap with periodic boundaries			
 			iPosElectron[:,iHop] = iPosNew
-			trajectory.append([iHop, t, np.copy(iPosNew)])
+			trajectory.append((iHop, t) + tuple(iPosNew))
 			if iPosNew[2] > izMax:
 				izMax = iPosNew[2]
 				print "Reached", izMax/self.h, "nm at t =", t, "s"
@@ -158,7 +157,7 @@ class CarrierHoppingMC:
 			coulomb -= self.coulombLandscape(iPosElectron - iPosOld[:,None], iHop) #remove contribution from old position of iHop'th electron
 			coulomb += self.coulombLandscape(iPosElectron - iPosNew[:,None], iHop) #remove contribution from old position of iHop'th electron
 			
-		return trajectory
+		return np.array(trajectory, dtype=np.dtype('i8,f8,i8,i8,i8'))
 	
 #----- Test code -----
 if __name__ == "__main__":
@@ -166,7 +165,7 @@ if __name__ == "__main__":
 		"L": [ 100, 100, 1000], #box size in nm
 		"h": 1., #grid spacing in nm
 		"Efield": 0.01, #electric field in V/nm
-		"dosSigma": 0.2, #dos standard deviation in eV
+		"dosSigma": 0.1, #dos standard deviation in eV
 		"dosMu": -0.3, #dos center in eV
 		"T": 298., #temperature in Kelvin
 		"hopDistance": 1., #average hop distance in nm
@@ -184,8 +183,4 @@ if __name__ == "__main__":
 	}
 	chmc = CarrierHoppingMC(params)
 	trajectory = chmc.run()
-	print len(trajectory)
-
-	trajFile = open("trajectory.pkl","wb")
-	pickle.dump(trajectory, trajFile)
-	trajFile.close()
+	np.savetxt("trajectory.dat", trajectory, fmt="%d %e %d %d %d", header="iElectron t[s] ix iy iz") #Save trajectories together

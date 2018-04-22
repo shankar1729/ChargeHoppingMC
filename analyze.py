@@ -1,21 +1,18 @@
-import pickle
 import numpy as np
 import matplotlib.pyplot as plt
 import mpl_toolkits.mplot3d.axes3d as p3
 import matplotlib.animation as animation
 
-trajFile = open('trajectory.pkl')
-trajectory = pickle.load(trajFile)
-trajFile.close()
-
-nElectrons = 1 + max([event[0] for event in trajectory])
+trajectory = np.loadtxt('trajectory.dat')
+nElectrons = 1 + int(np.max(trajectory[:,0]))
 print "Read trajectory with", len(trajectory), " hops and ", nElectrons, "electrons"
 
 plt.figure(1, figsize=(10,6))
 # Iterate over all electrons and plot its displacement in z-direction
 for i in range(nElectrons):
-	time = [event[1] for event in trajectory if event[0]==i]
-	dz = [event[2][2] for event in trajectory if event[0]==i]
+	sel = np.where(trajectory[:,0]==i)[0]
+	time = trajectory[sel,1]
+	dz = trajectory[sel,4]
 	plt.plot(time, dz)
 plt.title('Charge Hopping Monte Carlo in Pure Polymer')
 plt.xlabel('Time[s]')
