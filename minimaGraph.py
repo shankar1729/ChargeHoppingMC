@@ -11,6 +11,8 @@ Outputs:
 	iPosBarrier: Grid coordinates of barrier positions per minima per connection (dimensions: nMinima x maxDegree x 3)
 	jMinima: Minima index at the other end of each connection (dimensions: nMinima x maxDegree)
 	Sbarrier: Hopping entropy for each connection (dimensions: nMinima x maxDegree)
+	minimaStart: Set of minima connected to z=0 (where electrons should start)
+	minimaStop: Set of minima connected to z=zMax (where electron trajectories should end)
 """
 def minimaGraph(E0, hopDistGrid, kT):
 	from scipy.sparse import csr_matrix, diags
@@ -206,4 +208,4 @@ def minimaGraph(E0, hopDistGrid, kT):
 	#Collect and return outputs:
 	iPosMinima = iPosMesh[minimaIndex] #locations of the minima (grid coordinates)
 	iPosBarrier = iPosMesh[iConnMesh] #locations of barrier points per minima per connection
-	return iPosMinima, iPosBarrier, jMinima, Smesh
+	return iPosMinima, iPosBarrier, jMinima, Smesh, minimaStart, minimaStop
