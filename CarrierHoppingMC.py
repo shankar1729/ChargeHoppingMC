@@ -1,10 +1,6 @@
 #!/usr/bin/env python
-
-import numpy as np
+from common import *
 import pickle
-
-#Unit definitions:
-kB = 0.000086174 #in eV/K
 
 class CarrierHoppingMC:
 	
