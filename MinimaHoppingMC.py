@@ -42,6 +42,8 @@ class MinimaHoppingMC:
 		
 		#Other parameters:
 		self.h = h
+		self.S = S
+		self.L = L
 		self.nElectrons = params["nElectrons"]
 		self.maxHops = params["maxHops"]
 		self.tMax = params["tMax"]
@@ -49,6 +51,25 @@ class MinimaHoppingMC:
 		self.hopFrequency = params["hopFrequency"]
 		self.coulombPrefac = 1.44 / params["epsBG"] #prefactor to 1/r in energy [in eV] of two electrons separated by r [in nm]
 		self.useCoulomb = params["useCoulomb"]
+	
+	"""
+	Calculate the Coulomb interaction (with regularization for 0):
+		iPos1: array of integer coordinates with dimensions [...,3]
+		iPos2: array of integer coordinates with dimensions [...,3]
+		iSelf: optional: if provided, zero out iSelf'th sub-array(s) along first dimension of output
+		Returns coulomb interactions of dimensions iPos1.shape[:-1] + iPos2.shape[:-1]
+	"""
+	def getCoulomb(self, iPos1, iPos2, iSelf=None):
+		dim1 = iPos1.shape[:-1] + (1,)*(len(iPos2.shape)-1) + (3,) #dimensions to broadcast iPos1 to
+		dim2 = (1,)*(len(iPos1.shape)-1) + iPos2.shape[:-1] + (3,) #dimensions to broadcast iPos2 to
+		dim = (1,)*(len(iPos1.shape)-1 + len(iPos2.shape)-1) + (3,) #dimensions to broadcast 3-vectors to
+		xDelta = (np.reshape(iPos1,dim1) - np.reshape(iPos2, dim2)) * (1./np.reshape(self.S, dim)) #separation in fractional coordinates
+		xDelta[...,:2] -= np.floor(0.5 + xDelta[...,:2]) #wrap to nearest periodic neighbours in first two directions
+		rDelta = np.sqrt(np.sum((xDelta * np.reshape(self.L,dim))**2, axis=-1)) #distance from reference point
+		coulomb = self.coulombPrefac / np.maximum(1e-6*self.h, rDelta) #regularize small r
+		if iSelf is not None:
+			coulomb[iSelf] = 0.
+		return coulomb
 	
 	"""
 	Run one complete MC simulation and return trajectory (jump times and positions for each electron)
@@ -69,7 +90,10 @@ class MinimaHoppingMC:
 		Abarrier0 = self.Abarrier0[iMinima] #dimensions: [nElectrons,nConnections]
 		coulomb = np.zeros(Abarrier0.shape)
 		if self.useCoulomb:
-			pass #TODO
+			print 'Calculating initial coulomb interactions in run', iRun
+			for iElectron,iPos0 in enumerate(self.iPosMinima[iMinima]): #for each minimum position with an electron
+				coulomb += ( self.getCoulomb(self.iPosBarrier[iMinima], iPos0, iElectron) #coulomb at barrier
+					- self.getCoulomb(self.iPosMinima[iMinima], iPos0, iElectron)[:,None] ) #coulomb at minimum
 		
 		#Main MC loop:
 		izMax = 0
@@ -95,8 +119,13 @@ class MinimaHoppingMC:
 			iNeighbor = np.searchsorted(
 				np.cumsum(hopRateSub[iHop]), #cumulative probability distribution
 				hopRate[iHop]*np.random.rand()) #a random number till the total probability
-			#--- update electron position:
+			#--- pre-move Coulomb calculation:
 			iPosOld = self.iPosMinima[iMinima[iHop]]
+			if self.useCoulomb:
+				#--- subtract Coulomb energy landscape contributions at all other electrons due to old position of current electron:
+				coulomb -= ( self.getCoulomb(self.iPosBarrier[iMinima], iPosOld, iHop) #coulomb at barrier
+					- self.getCoulomb(self.iPosMinima[iMinima], iPosOld, iHop)[:,None] ) #coulomb at minimum
+			#--- update electron position:
 			jMinimaHop = self.jMinima[iMinima[iHop],iNeighbor]
 			iMinima[iHop] = jMinimaHop
 			iPosNew = self.iPosMinima[jMinimaHop]
@@ -108,11 +137,15 @@ class MinimaHoppingMC:
 				break #Terminate: an electron has reached end of box
 			#--- update cached energies:
 			Abarrier0[iHop] = self.Abarrier0[jMinimaHop]
+			#--- post-move Coulomb calculation:
 			if self.useCoulomb:
-				#--- update Coulomb energies of current electron:
-				pass #TODO
-				#--- update Coulomb energies of all other electrons:
-				pass #TODO
+				#--- add Coulomb energy landscape contributions at all other electrons due to new position of current electron:
+				coulomb += ( self.getCoulomb(self.iPosBarrier[iMinima], iPosNew, iHop) #coulomb at barrier
+					- self.getCoulomb(self.iPosMinima[iMinima], iPosNew, iHop)[:,None] ) #coulomb at minimum
+				#--- recalculate Coulomb energy landscape of current electron at new position:
+				coulomb[iHop] = np.sum( self.getCoulomb(self.iPosMinima[iMinima], self.iPosBarrier[iMinima[iHop]], iHop) #coulomb at barrier
+						- self.getCoulomb(self.iPosMinima[iMinima], iPosNew, iHop)[:,None], #coulomb at minimum
+					 axis=0 )
 		
 		print 'End MC run', iRun, ' with trajectory length:', len(trajectory), 'events'
 		return np.array(trajectory, dtype=np.dtype('i8,f8,i8,i8,i8'))
@@ -133,7 +166,7 @@ if __name__ == "__main__":
 		"nRuns": 16, #number of MC runs
 		"tMax": 1e3, #stop simulation at this time from start in seconds
 		"epsBG": 2.5, #relative permittivity of polymer
-		"useCoulomb": False, #whether to include e-e Coulomb interactions
+		"useCoulomb": True, #whether to include e-e Coulomb interactions
 		#--- Nano-particle parameters
 		"epsNP": 10., #relative permittivity of nanoparticles
 		"trapDepthNP": -1., #trap depth of nanoparticles in eV
@@ -143,6 +176,7 @@ if __name__ == "__main__":
 		"clusterShape": "random" #one of "round", "random", "line" or "sheet"
 	}
 	mhmc = MinimaHoppingMC(params)
+	#mhmc.run(); exit() #uncomment for serial debugging
 	
 	nRuns = params["nRuns"]
 	trajectory = np.concatenate(parallelMap(mhmc.run, cpu_count(), range(nRuns))) #Run in parallel and merge trajectories
