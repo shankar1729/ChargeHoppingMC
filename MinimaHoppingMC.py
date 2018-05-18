@@ -55,6 +55,7 @@ class MinimaHoppingMC:
 	"""
 	def run(self, iRun=0):
 		
+		np.random.seed()	#Generate a new seed for every run
 		print 'Starting MC run', iRun
 		#Inject electrons in randomly shozen z=0 connected minima:
 		iMinima = self.minimaStart[np.random.permutation(len(self.minimaStart))[:self.nElectrons]]
@@ -128,7 +129,7 @@ if __name__ == "__main__":
 		"hopDistance": 1., #average hop distance in nm
 		"hopFrequency": 1e12, #attempt frequency in Hz
 		"nElectrons": 16, #number of electrons to track
-		"maxHops": 20000, #maximum hops per MC runs
+		"maxHops": 2e5, #maximum hops per MC runs
 		"nRuns": 16, #number of MC runs
 		"tMax": 1e3, #stop simulation at this time from start in seconds
 		"epsBG": 2.5, #relative permittivity of polymer
