@@ -48,6 +48,7 @@ class MinimaHoppingMC:
 		self.beta = 1./kT
 		self.hopFrequency = params["hopFrequency"]
 		self.coulombPrefac = 1.44 / params["epsBG"] #prefactor to 1/r in energy [in eV] of two electrons separated by r [in nm]
+		self.useCoulomb = params["useCoulomb"]
 	
 	"""
 	Run one complete MC simulation and return trajectory (jump times and positions for each electron)
@@ -65,7 +66,9 @@ class MinimaHoppingMC:
 		
 		#Initial energy of each electron and its neighbourhood
 		Abarrier0 = self.Abarrier0[iMinima] #dimensions: [nElectrons,nConnections]
-		coulomb = np.zeros(Abarrier0.shape) #TODO
+		coulomb = np.zeros(Abarrier0.shape)
+		if self.useCoulomb:
+			pass #TODO
 		
 		#Main MC loop:
 		izMax = 0
@@ -104,10 +107,11 @@ class MinimaHoppingMC:
 				break #Terminate: an electron has reached end of box
 			#--- update cached energies:
 			Abarrier0[iHop] = self.Abarrier0[jMinimaHop]
-			#--- update Coulomb energies of current electron:
-			#TODO
-			#--- update Coulomb energies of all other electrons:
-			#TODO
+			if self.useCoulomb:
+				#--- update Coulomb energies of current electron:
+				pass #TODO
+				#--- update Coulomb energies of all other electrons:
+				pass #TODO
 		
 		print 'End MC run', iRun, ' with trajectory length:', len(trajectory), 'events'
 		return np.array(trajectory, dtype=np.dtype('i8,f8,i8,i8,i8'))
@@ -117,7 +121,7 @@ if __name__ == "__main__":
 	params = { 
 		"L": [ 50, 50, 1000 ], #box size in nm
 		"h": 1., #grid spacing in nm
-		"Efield": 0.01, #electric field in V/nm
+		"Efield": 0.03, #electric field in V/nm
 		"dosSigma": 0.1, #dos standard deviation in eV
 		"dosMu": -0.3, #dos center in eV
 		"T": 298., #temperature in Kelvin
@@ -128,6 +132,7 @@ if __name__ == "__main__":
 		"nRuns": 16, #number of MC runs
 		"tMax": 1e3, #stop simulation at this time from start in seconds
 		"epsBG": 2.5, #relative permittivity of polymer
+		"useCoulomb": False, #whether to include e-e Coulomb interactions
 		#--- Nano-particle parameters
 		"epsNP": 10., #relative permittivity of nanoparticles
 		"trapDepthNP": -1., #trap depth of nanoparticles in eV
