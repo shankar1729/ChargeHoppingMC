@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 from common import *
 from minimaGraph import *
+from PeriodicFD import *
 
 class MinimaHoppingMC:
 	
@@ -17,16 +18,39 @@ class MinimaHoppingMC:
 		L = h * S #box size rounded to integer number of grid points
 		kT = kB * params["T"]
 		hopDistance = params["hopDistance"]
-		
+
+		#Initialize nano-particle parameters
+		epsNP = params["epsNP"]
+		epsBG = params["epsBG"]
+		radiusNP = params["radiusNP"]
+		volFracNP = params["volFracNP"]
+		nParticles = np.round(np.prod(S)*volFracNP/(4./3*np.pi*(radiusNP)**3)).astype(int) #total number of nano-particles
+		print "Number of nano-particles:", nParticles
+		radiusNP = np.ones(nParticles)*radiusNP #array of NP radii
+		shouldPlotNP = params["shouldPlotNP"]
+
+		#Initialize nano-particle distribution in the polymer matrix
+		def initNPClusters():
+			#random distribution of nano-particles
+			r0 = np.random.randn(nParticles, 3) * L[None,:]
+			#TODO add options for other cluster shapes
+			return r0
+		positionsNP = initNPClusters()
+
 		#Initial energy landscape (without inter-electron repulsions):
 		def initEnergyLandscape():
-			#--- add polymer internal DOS
-			E0 = params["dosMu"] + params["dosSigma"]*np.random.randn(*S)
-			#--- add electric field contributions
-			z = h * np.arange(S[2])
-			E0 -= params["Efield"] * z[None,None,:]
-			#TODO add nanoparticles here / options for exponential instead etc.
-			return E0
+			#--- calculate polymer internal DOS
+			Epoly = params["dosMu"] + params["dosSigma"]*np.random.randn(*S)
+			#--- calculate electric field contributions and mask:
+			Ez = params["Efield"]
+			if nParticles:
+				phi, mask = periodicFD(L, S, positionsNP, radiusNP, epsNP, epsBG, Ez, shouldPlotNP)
+			else:
+				z = h * np.arange(S[2])
+				phi = -Ez * np.repeat(z[None,None,:], (S[0],S[1],1))
+				mask = np.zeros(phi.shape)
+			#--- combine field and DOS contributions to energy landscape:
+			return phi + np.where(mask, params["trapDepthNP"], Epoly)
 		E0 = initEnergyLandscape()
 		printDuration('InitE0')
 		
@@ -153,27 +177,28 @@ class MinimaHoppingMC:
 #----- Test code -----
 if __name__ == "__main__":
 	params = { 
-		"L": [ 50, 50, 1000 ], #box size in nm
+		"L": [ 50, 50, 1e3 ], #box size in nm
 		"h": 1., #grid spacing in nm
-		"Efield": 0.03, #electric field in V/nm
+		"Efield": 0.08, #electric field in V/nm
 		"dosSigma": 0.1, #dos standard deviation in eV
-		"dosMu": -0.3, #dos center in eV
+		"dosMu": -0.2, #dos center in eV
 		"T": 298., #temperature in Kelvin
 		"hopDistance": 1., #average hop distance in nm
 		"hopFrequency": 1e12, #attempt frequency in Hz
 		"nElectrons": 16, #number of electrons to track
-		"maxHops": 2e5, #maximum hops per MC runs
+		"maxHops": 2e3, #maximum hops per MC runs
 		"nRuns": 16, #number of MC runs
 		"tMax": 1e3, #stop simulation at this time from start in seconds
 		"epsBG": 2.5, #relative permittivity of polymer
-		"useCoulomb": True, #whether to include e-e Coulomb interactions
+		"useCoulomb": False, #whether to include e-e Coulomb interactions
 		#--- Nano-particle parameters
 		"epsNP": 10., #relative permittivity of nanoparticles
 		"trapDepthNP": -1., #trap depth of nanoparticles in eV
 		"radiusNP": 2.5, #radius of nanoparticles in nm
 		"volFracNP": 0.004, #volume fraction of nanoparticles
 		"nClusterMu": 30, #mean number of nanoparticles in each cluster (Poisson distribution)
-		"clusterShape": "random" #one of "round", "random", "line" or "sheet"
+		"clusterShape": "random", #one of "round", "random", "line" or "sheet"
+		"shouldPlotNP": False #plot the electrostatic potential from PeriodicFD
 	}
 	mhmc = MinimaHoppingMC(params)
 	#mhmc.run(); exit() #uncomment for serial debugging

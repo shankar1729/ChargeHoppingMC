@@ -53,8 +53,7 @@ plt.xlabel("Time [s]")
 plt.savefig("avgDist.pdf", bbox_inches='tight')
 print "Done"
 
-###### Mobility ######
-mu = avgVel/0.01
+np.savetxt("avgZpos.dat", np.array([timeGrid, avgZpos]).T)
+np.savetxt("avgVel.dat", np.array([timeGridMid, avgVel]).T)
 
 plt.show()
-
