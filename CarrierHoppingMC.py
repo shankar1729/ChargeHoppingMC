@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 from common import *
+from PeriodicFD import *
 
 class CarrierHoppingMC:
 	
@@ -11,28 +12,55 @@ class CarrierHoppingMC:
 	def __init__(self, params):
 		
 		#Initialize box and grid:
-		self.h = params["h"] #grid spacing
-		self.S = np.round(np.array(params["L"])/self.h).astype(int) #number of grid points
-		self.L = self.h * self.S #box size rounded to integer number of grid points
+		h = params["h"] #grid spacing
+		S = np.round(np.array(params["L"])/h).astype(int) #number of grid points
+		L = h * S #box size rounded to integer number of grid points
+
+		#Initialize nano-particle parameters
+		epsNP = params["epsNP"]
+		epsBG = params["epsBG"]
+		radiusNP = params["radiusNP"]
+		volFracNP = params["volFracNP"]
+		nParticles = np.round(np.prod(S)*volFracNP/(4./3*np.pi*(radiusNP)**3)).astype(int) #total number of nano-particles
+		print "Number of nano-particles:", nParticles
+		radiusNP = np.ones(nParticles)*radiusNP #array of NP radii
+		shouldPlotNP = params["shouldPlotNP"]
+
+		#Initialize nano-particle distribution in the polymer matrix
+		def initNPClusters():
+			#random distribution of nano-particles
+			r0 = np.random.randn(nParticles, 3) * L[None,:]
+			#TODO add options for other cluster shapes
+			return r0
+		positionsNP = initNPClusters()
 		
 		#Initial energy landscape (without inter-electron repulsions):
-		#--- add polymer internal DOS
-		self.E0 = params["dosMu"] + params["dosSigma"]*np.random.randn(*self.S)
-		#--- add electric field contributions
-		z = self.h * np.arange(self.S[2])
-		self.E0 -= params["Efield"] * z[None,None,:]
-		#TODO add nanoparticles here / optipons for exponential instead etc.
+		def initEnergyLandscape():
+			#--- calculate polymer internal DOS
+			Epoly = params["dosMu"] + params["dosSigma"]*np.random.randn(*S)
+			#--- calculate electric field contributions and mask:
+			Ez = params["Efield"]
+			if nParticles:
+				phi, mask = periodicFD(L, S, positionsNP, radiusNP, epsNP, epsBG, Ez, shouldPlotNP)
+			else:
+				z = h * np.arange(S[2])
+				phi = -Ez * np.repeat(z[None,None,:], (S[0],S[1],1))
+				mask = np.zeros(phi.shape)
+			#--- combine field and DOS contributions to energy landscape:
+			return phi + np.where(mask, params["trapDepthNP"], Epoly)
+		self.E0 = initEnergyLandscape()
+		printDuration('InitE0')
 		
 		#Initialize neighbour list and distance factors:
 		hopDistance = params["hopDistance"]
 		drMax = 5.*hopDistance #truncate exponential distance function at exp(-5)
-		self.irMax = int(np.ceil(drMax/self.h)) #max number of grid points electron can hop
+		self.irMax = int(np.ceil(drMax/h)) #max number of grid points electron can hop
 		irGrid = np.arange(-self.irMax,+self.irMax+1) #list of relative neighbour indices in 1D
 		irMesh = np.meshgrid(irGrid, irGrid, irGrid, indexing='ij') #3D mesh of neighbour indices
 		self.ir = np.vstack([ irMesh_i.flatten()[None,:] for irMesh_i in irMesh ]) #3 x N array of neighbour indices
 		#--- calculate distances and select neighbours within drMax:
-		dr = np.sqrt(np.sum((self.ir*self.h)**2, axis=0))
-		irSel = np.where(np.logical_and(dr<=drMax, dr>0))[0]
+		dr = np.sqrt(np.sum((self.ir*h)**2, axis=0))
+		irSel = np.where(np.logical_and(dr<=drMax, dr>0))[0] #select indices within a sphere of radius drMax
 		self.ir = self.ir[:,irSel]
 		self.wr = np.exp(-dr[irSel]/hopDistance) #exponential probability factor due to length of hop
 		
@@ -46,6 +74,9 @@ class CarrierHoppingMC:
 		self.E0 = np.concatenate((EzPad, self.E0, EzPad), axis=2)
 		
 		#Other parameters:
+		self.h = h
+		self.S = S
+		self.L = L
 		self.nElectrons = params["nElectrons"]
 		self.tMax = params["tMax"]
 		self.beta = 1./(kB * params["T"])
@@ -162,25 +193,29 @@ class CarrierHoppingMC:
 #----- Test code -----
 if __name__ == "__main__":
 	params = { 
-		"L": [ 100, 100, 1000], #box size in nm
+		"L": [ 50, 50, 1000], #box size in nm
 		"h": 1., #grid spacing in nm
-		"Efield": 0.01, #electric field in V/nm
+		"Efield": 0.08, #electric field in V/nm
 		"dosSigma": 0.1, #dos standard deviation in eV
-		"dosMu": -0.3, #dos center in eV
+		"dosMu": -0.2, #dos center in eV
 		"T": 298., #temperature in Kelvin
 		"hopDistance": 1., #average hop distance in nm
 		"hopFrequency": 1e12, #attempt frequency in Hz
 		"nElectrons": 16, #number of electrons to track
 		"tMax": 1e3, #stop simulation at this time from start in seconds
 		"epsBG": 2.5, #relative permittivity of polymer
+		# "useCoulomb": True
 		#--- Nano-particle parameters
 		"epsNP": 10., #relative permittivity of nanoparticles
 		"trapDepthNP": -1., #trap depth of nanoparticles in eV
 		"radiusNP": 2.5, #radius of nanoparticles in nm
 		"volFracNP": 0.004, #volume fraction of nanoparticles
 		"nClusterMu": 30, #mean number of nanoparticles in each cluster (Poisson distribution)
-		"clusterShape": "random" #one of "round", "random", "line" or "sheet"
+		"clusterShape": "random", #one of "round", "random", "line" or "sheet"
+		"shouldPlotNP": False #plot the electrostatic potential from PeriodicFD
 	}
 	chmc = CarrierHoppingMC(params)
 	trajectory = chmc.run()
+	# nRuns = params["nRuns"]
+	# trajectory = np.concatenate(parallelMap(mhmc.run, cpu_count(), range(nRuns))) #Run in parallel and merge trajectories
 	np.savetxt("trajectory.dat", trajectory, fmt="%d %e %d %d %d", header="iElectron t[s] ix iy iz") #Save trajectories together

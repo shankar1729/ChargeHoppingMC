@@ -47,7 +47,7 @@ class MinimaHoppingMC:
 				phi, mask = periodicFD(L, S, positionsNP, radiusNP, epsNP, epsBG, Ez, shouldPlotNP)
 			else:
 				z = h * np.arange(S[2])
-				phi = -Ez * np.repeat(z[None,None,:], (S[0],S[1],1))
+				phi = -Ez * np.tile(z, (S[0],S[1],1))
 				mask = np.zeros(phi.shape)
 			#--- combine field and DOS contributions to energy landscape:
 			return phi + np.where(mask, params["trapDepthNP"], Epoly)
@@ -179,23 +179,23 @@ if __name__ == "__main__":
 	params = { 
 		"L": [ 50, 50, 1e3 ], #box size in nm
 		"h": 1., #grid spacing in nm
-		"Efield": 0.08, #electric field in V/nm
+		"Efield": 0.06, #electric field in V/nm
 		"dosSigma": 0.1, #dos standard deviation in eV
-		"dosMu": -0.2, #dos center in eV
+		"dosMu": -0.4, #dos center in eV
 		"T": 298., #temperature in Kelvin
 		"hopDistance": 1., #average hop distance in nm
 		"hopFrequency": 1e12, #attempt frequency in Hz
 		"nElectrons": 16, #number of electrons to track
-		"maxHops": 2e3, #maximum hops per MC runs
+		"maxHops": 2e4, #maximum hops per MC runs
 		"nRuns": 16, #number of MC runs
 		"tMax": 1e3, #stop simulation at this time from start in seconds
 		"epsBG": 2.5, #relative permittivity of polymer
-		"useCoulomb": False, #whether to include e-e Coulomb interactions
+		"useCoulomb": True, #whether to include e-e Coulomb interactions
 		#--- Nano-particle parameters
 		"epsNP": 10., #relative permittivity of nanoparticles
 		"trapDepthNP": -1., #trap depth of nanoparticles in eV
 		"radiusNP": 2.5, #radius of nanoparticles in nm
-		"volFracNP": 0.004, #volume fraction of nanoparticles
+		"volFracNP": 0.006, #volume fraction of nanoparticles
 		"nClusterMu": 30, #mean number of nanoparticles in each cluster (Poisson distribution)
 		"clusterShape": "random", #one of "round", "random", "line" or "sheet"
 		"shouldPlotNP": False #plot the electrostatic potential from PeriodicFD
