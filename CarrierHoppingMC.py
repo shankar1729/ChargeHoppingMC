@@ -77,6 +77,7 @@ class CarrierHoppingMC:
 		self.h = h
 		self.S = S
 		self.L = L
+		self.maxHops = params["maxHops"]
 		self.nElectrons = params["nElectrons"]
 		self.tMax = params["tMax"]
 		self.beta = 1./(kB * params["T"])
@@ -101,7 +102,7 @@ class CarrierHoppingMC:
 	"""
 	Run one complete MC simulation and return trajectory (jump times and positions for each electron)
 	"""
-	def run(self):
+	def run(self, iRun=0):
 		
 		#Initialize electron positions (in grid coordinates)
 		iPosElectron = np.vstack((
@@ -112,8 +113,11 @@ class CarrierHoppingMC:
 		
 		#Initialize trajectory: list of electron number, time of event and grid position
 		t = 0 #time of latest hop
-		trajectory = [ (iElectron, t) + tuple(iPos) for iElectron,iPos in enumerate(iPosElectron.T) ]
-		
+		# ---- nElectronOffset from MINIMAHOPPING -----
+		# -----------(ADDED TO TRAJECTORY) ------------
+		nElectronOffset = iRun*self.nElectrons
+		trajectory = [ (iElectron+nElectronOffset, t) + tuple(iPos) for iElectron,iPos in enumerate(iPosElectron.T) ]
+		print iElectron,iPos,iElectron,nElectronOffset,"\n"	
 		#Initial energy of each electron and its neighbourhood
 		#--- Fetch energy at each electron:
 		E0electron = self.E0[
@@ -137,7 +141,8 @@ class CarrierHoppingMC:
 
 		#Main MC loop:
 		izMax = 0
-		while True:
+		#------- Added limit to MC simulation to given maxHops -----
+		while len(trajectory) < self.maxHops:
 			#Calculate hopping probabilities for each electron:
 			#--- for each electron to each neighbour:
 			hopRateSub = (self.hopFrequency
@@ -156,7 +161,7 @@ class CarrierHoppingMC:
 			if t > self.tMax:
 				t = self.tMax
 				#Finalize trajectory:
-				trajectory += [ (iElectron, t) + tuple(iPos) for iElectron,iPos in enumerate(iPosElectron.T) ]
+				trajectory += [ (iElectron+nElectronOffset, t) + tuple(iPos) for iElectron,iPos in enumerate(iPosElectron.T) ]
 				break
 			#--- select neighbour to hop to:
 			iNeighbor = np.searchsorted(
@@ -166,10 +171,10 @@ class CarrierHoppingMC:
 			iPosOld = iPosElectron[:,iHop]
 			iPosNew = np.mod(iPosOld + self.ir[:,iNeighbor], self.S) #Wrap with periodic boundaries			
 			iPosElectron[:,iHop] = iPosNew
-			trajectory.append((iHop, t) + tuple(iPosNew))
+			trajectory.append((iHop+nElectronOffset, t) + tuple(iPosNew))
 			if iPosNew[2] > izMax:
 				izMax = iPosNew[2]
-				print "Reached", izMax/self.h, "nm at t =", t, "s"
+				print "Run", iRun, "reached", izMax/self.h, "nm at t =", t, "s"
 				if izMax >= self.S[2] - self.irMax:
 					break #Terminate: an electron has reached end of box
 			#--- update cached energies:
@@ -187,7 +192,7 @@ class CarrierHoppingMC:
 			#--- update Coulomb energies of all other electrons:
 			coulomb -= self.coulombLandscape(iPosElectron - iPosOld[:,None], iHop) #remove contribution from old position of iHop'th electron
 			coulomb += self.coulombLandscape(iPosElectron - iPosNew[:,None], iHop) #remove contribution from old position of iHop'th electron
-			
+		print 'End MC run', iRun, 'with trajectory length:', len(trajectory), 'events'	
 		return np.array(trajectory, dtype=np.dtype('i8,f8,i8,i8,i8'))
 	
 #----- Test code -----
@@ -204,6 +209,10 @@ if __name__ == "__main__":
 		"nElectrons": 16, #number of electrons to track
 		"tMax": 1e3, #stop simulation at this time from start in seconds
 		"epsBG": 2.5, #relative permittivity of polymer
+		"nRuns": 16,
+		"maxHops": 2e4,
+		"tMax": 1e3,
+
 		# "useCoulomb": True
 		#--- Nano-particle parameters
 		"epsNP": 10., #relative permittivity of nanoparticles
@@ -215,7 +224,8 @@ if __name__ == "__main__":
 		"shouldPlotNP": False #plot the electrostatic potential from PeriodicFD
 	}
 	chmc = CarrierHoppingMC(params)
-	trajectory = chmc.run()
-	# nRuns = params["nRuns"]
-	# trajectory = np.concatenate(parallelMap(mhmc.run, cpu_count(), range(nRuns))) #Run in parallel and merge trajectories
+	#trajectory = chmc.run()
+	nRuns = params["nRuns"]
+	# -------- Now runs parallel from MINIMAHOPPING -----------
+	trajectory = np.concatenate(parallelMap(chmc.run, cpu_count(), range(nRuns))) #Run in parallel and merge trajectories
 	np.savetxt("trajectory.dat", trajectory, fmt="%d %e %d %d %d", header="iElectron t[s] ix iy iz") #Save trajectories together
