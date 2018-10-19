@@ -89,7 +89,8 @@ class CarrierHoppingMC:
 	def safeCoulomb(self, r):
 		return self.coulombPrefac / np.maximum(1e-6*self.h, np.sqrt(np.sum(r**2, axis=0)))
 	
-	#**TODO** use GetCoulomb like that in M
+	#**TODO** use GetCoulomb like that in MinimaHopping
+	
 	#Calculate coulomb landscape of neighbours given grid separation iPosDelta of center locations
 	#Avoid interaction with iCur: the current electron for which interactions are being calculated
 	def coulombLandscape(self, iPosDelta, iCur):
@@ -206,7 +207,7 @@ class CarrierHoppingMC:
 #----- Test code -----
 if __name__ == "__main__":
 	params = { 
-		"L": [ 50, 50, 1e3], #box size in nm
+		"L": [ 50, 50, 1e3 ], #box size in nm
 		"h": 1., #grid spacing in nm
 		"Efield": 0.06, #electric field in V/nm
 		"dosSigma": 0.224, #dos standard deviation in eV
@@ -215,18 +216,18 @@ if __name__ == "__main__":
 		"hopDistance": 1., #average hop distance in nm
 		"hopFrequency": 1e12, #attempt frequency in Hz
 		"nElectrons": 16, #number of electrons to track
-		"maxHops": 2e4,
-		"nRuns": 16,
+		"maxHops": 2e5, #maximum hops per MC runs
+		"nRuns": 16, #number of MC runs
 		"tMax": 1e3, #stop simulation at this time from start in seconds
 		"epsBG": 2.5, #relative permittivity of polymer
-		"useCoulomb": True,
+		"useCoulomb": True, #whether to include e-e Coulomb interactions
 		#--- Nano-particle parameters
 		"epsNP": 10., #relative permittivity of nanoparticles
 		"trapDepthNP": -1.1, #trap depth of nanoparticles in eV
 		"radiusNP": 2.5, #radius of nanoparticles in nm
-		"volFracNP": 0.004, #volume fraction of nanoparticles
-		"nClusterMu": 30, #mean number of nanoparticles in each cluster (Poisson distribution)
-		"nClusterSigma": 5,
+		"volFracNP": 0.00, #volume fraction of nanoparticles
+		"nClusterMu": 30, #mean number of nanoparticles in each cluster (Gaussian distribution)
+		"nClusterSigma": 5, #cluster size standard deviation in nm
 		"clusterShape": "line", #one of "round", "random", "line" or "sheet"
 		"shouldPlotNP": False #plot the electrostatic potential from PeriodicFD
 	}
