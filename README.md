@@ -7,6 +7,25 @@
 - Simulation stops when one of the electrons reaches the other end
 - An upper cap on the number of hops for each electron to stop the simulation without waiting for any of them to reach the other end
 
-## TODO
+Two approaches have been implemented, namely
+1. Grid-based method (`CarrierHoppingMC.py`)
+2. Graph-based method (`MinimaHoppingMC.py`)
 
-- [ ] Nano particle - various cluster shapes
+## How to run
+
+The two Python files mentioned above have a list of parameters (with descriptive comments) near the end of file. Change them before running the simulation using either `python CarrierHoppingMC.py` or `python MinimaHoppingMC.py`
+
+## Output
+
+An ASCII file named `trajectory.dat` contains information about each electron hop.
+It has five columns corresponding to:
+- electron ID (electrons over parallel runs have unique IDs)
+- time of hop (in seconds)
+- 3 columns for coordinates of electron after the hop (in nm)
+
+## Post-processing
+
+`analyze.py` post-process the output file to:
+- plot trajectories
+- calculate and plot average velocity and displacement in z-dir
+- exports figures in PDF files and calculated values in .dat files
