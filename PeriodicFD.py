@@ -3,7 +3,7 @@ import numpy as np
 from scipy.special import erfc
 import scipy.sparse as sparse
 
-def periodicFD(L, S, r0, R, epsIn, epsOut, Ez, shouldPlot=False):
+def periodicFD(L, S, r0, R, epsIn, epsOut, Ez, shouldPlot=False, dirichletBC=True):
 	"""
 	Calculate electrostatic potential in a box of size L (dimensions [3,])
 	with grid sample counts S (dimensions [3,]; integer) assumed to be
@@ -72,14 +72,22 @@ def periodicFD(L, S, r0, R, epsIn, epsOut, Ez, shouldPlot=False):
 	jCheck = (L_j[:,2]==S[2])
 	iWrap = np.where(np.logical_and(iCheck, np.logical_not(jCheck)))[0]
 	jWrap = np.where(np.logical_and(jCheck, np.logical_not(iCheck)))[0]
-	rhs[L_iFlat[iWrap]] = -L_val[iWrap] * (-Ez*(-h[2])); L_val[iWrap] = 0.; #Dirichlet BC on z = -dz
-	rhs[L_iFlat[jWrap]] = -L_val[jWrap] * (-Ez*L[2]);    L_val[jWrap] = 0.; #Dirichlet BC on z = +Lz
+	if dirichletBC:
+		rhs[L_iFlat[iWrap]] = -L_val[iWrap] * (-Ez*(-h[2])); L_val[iWrap] = 0.; #Dirichlet BC on z = -dz
+		rhs[L_iFlat[jWrap]] = -L_val[jWrap] * (-Ez*L[2]);    L_val[jWrap] = 0.; #Dirichlet BC on z = +Lz
+	else:
+		rhs[L_iFlat[iWrap]] = -L_val[iWrap] * (+Ez*L[2]) #Introduce Ez*L[2] potential difference between ends
+		rhs[L_iFlat[jWrap]] = -L_val[jWrap] * (-Ez*L[2]) #Introduce Ez*L[2] potential difference between ends
 	#Construct preconditioner:
 	iG = np.reshape(iMesh, (-1,3))
 	iG = np.where(iG>S[None,:]/2, iG-S[None,:], iG)
 	Gsq = np.sum((iG * (2*np.pi/L[None,:]))**2, axis=-1)
 	Gsq[0] = np.min(Gsq[1:])
 	invGsq = np.reshape(1./Gsq, S)
+	phi0 = -Ez*x[...,2].flatten()
+	if not dirichletBC:
+		invGsq[0,0,0] = 0. #periodic G=0 projection
+		phi0 -= np.mean(phi0)
 	def precondFunc(x):
 		return np.real(np.fft.ifftn(invGsq * np.fft.fftn(np.reshape(x,S))).flatten())
 	precondOp = sparse.linalg.LinearOperator((prodS,prodS), precondFunc)
@@ -92,7 +100,7 @@ def periodicFD(L, S, r0, R, epsIn, epsOut, Ez, shouldPlot=False):
 		global nIter
 		nIter += 1
 		print 'CG iteration', nIter
-	phi,info = sparse.linalg.cg(Lhs, rhs, callback=iterProgress, M=precondOp)
+	phi,info = sparse.linalg.cg(Lhs, rhs, callback=iterProgress, x0=phi0, M=precondOp, maxiter=100)
 	phi = np.reshape(phi,S)
 	#Optional plot:
 	if shouldPlot:
@@ -101,7 +109,9 @@ def periodicFD(L, S, r0, R, epsIn, epsOut, Ez, shouldPlot=False):
 		plotSlice = phi[0,:,:]
 		print np.min(plotSlice), np.max(plotSlice)
 		plt.imshow(plotSlice)
+		plt.colorbar()
 		plt.show()
+		exit()
 	return phi, mask
 
 
