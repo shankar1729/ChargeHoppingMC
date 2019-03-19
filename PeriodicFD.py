@@ -111,7 +111,6 @@ def periodicFD(L, S, r0, R, epsIn, epsOut, Ez, shouldPlot=False, dirichletBC=Tru
 		plt.imshow(plotSlice)
 		plt.colorbar()
 		plt.show()
-		exit()
 	return phi, mask
 
 

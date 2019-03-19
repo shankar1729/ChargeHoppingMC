@@ -6,19 +6,21 @@ Construct a graph of minima connected by energy barriers given inputs:
 	E0: energy landscape on a regular 3D mesh (dimensions: S[0] x S[1] x S[2])
 	hopDistGrid: hop distance in grid units (used for hopping 'entropy' calculation)
 	kT: kB * T at current temperature T (in same units as E0)
+	zPeriodic: whether z direction is bounded (True) or periodic (False)
 Outputs:
 	iPosMinima: Grid coordinates of minima (dimensions: nMinima x 3)
 	iPosBarrier: Grid coordinates of barrier positions per minima per connection (dimensions: nMinima x maxDegree x 3)
 	jMinima: Minima index at the other end of each connection (dimensions: nMinima x maxDegree)
 	Sbarrier: Hopping entropy for each connection (dimensions: nMinima x maxDegree)
-	minimaStart: Set of minima connected to z=0 (where electrons should start)
-	minimaStop: Set of minima connected to z=zMax (where electron trajectories should end)
+	minimaStart: Set of minima connected to z=0 (where electrons should start); empty if zPeriodic
+	minimaStop: Set of minima connected to z=zMax (where electron trajectories should end); empty if zPeriodic
+	jDisp: displacement vector to other end of each connection (dimensions: nMinima x maxDegree x 3)
 """
-def minimaGraph(E0, hopDistGrid, kT):
+def minimaGraph(E0, hopDistGrid, kT, zPeriodic=False):
 	from scipy.sparse import csr_matrix, diags
 	
 	#Get shape and then flatten for easy indexing:
-	S = E0.shape
+	S = np.array(E0.shape)
 	E0 = E0.flatten()
 	
 	#Set up connectivity:
@@ -40,6 +42,7 @@ def minimaGraph(E0, hopDistGrid, kT):
 	nGrid = len(fccSel)
 	iPosMesh = iPosMesh[fccSel]
 	E0 = E0[fccSel]
+	nPeriodic = 3 if zPeriodic else 2
 	def initAdjacency():
 		adjMat = csr_matrix((nGrid,nGrid),dtype=np.int)
 		posStride = np.array([S[1]*S[2], S[2], 1]) #indexing stride for cubic mesh
@@ -48,12 +51,12 @@ def minimaGraph(E0, hopDistGrid, kT):
 		for neighOffset in neighOffsets:
 			jPosMesh = iPosMesh + neighOffset[None,:]
 			#Wrap indices in periodic directions:
-			for iDir in range(2):
+			for iDir in range(nPeriodic):
 				if neighOffset[iDir]<0: jPosMesh[np.where(jPosMesh[:,iDir]<0)[0],iDir] += S[iDir]
 				if neighOffset[iDir]>0: jPosMesh[np.where(jPosMesh[:,iDir]>=S[iDir])[0],iDir] -= S[iDir]
 			jPosIndexAll = np.dot(jPosMesh, posStride) #index into original cubic mesh (wrapped to fcc below)
 			#Handle finite boundaries in z:
-			if neighOffset[2]>0: #only need to handle +z due to choice of half neighbour set above
+			if (not zPeriodic) and (neighOffset[2]>0): #only need to handle +z due to choice of half neighbour set above
 				zjValid = np.where(jPosMesh[:,2]<S[2])[0]
 				ijPosIndex = np.vstack((zjValid, fccSelInv[jPosIndexAll[zjValid]]))
 			else:
@@ -90,12 +93,16 @@ def minimaGraph(E0, hopDistGrid, kT):
 	printDuration('InitDomains')
 	
 	#Find saddle points connecting pairs of minima:
-	#--- Find minima whose domains contain z=0 (electrons will be injected here):
-	zSel = np.where(iPosMesh[:,2]==0, 1, 0)
-	minimaStart = np.where(minMatCum.T * zSel)[0]
-	#--- Find minima whose domains contain z=zmax (electron trajectories will end here):
-	zSel = np.where(iPosMesh[:,2]==S[2]-1, 1, 0)
-	minimaStop = np.where(minMatCum.T * zSel)[0]
+	if zPeriodic:
+		minimaStart = []
+		minimaStop = []
+	else:
+		#Find minima whose domains contain z=0 (electrons will be injected here):
+		zSel = np.where(iPosMesh[:,2]==0, 1, 0)
+		minimaStart = np.where(minMatCum.T * zSel)[0]
+		#Find minima whose domains contain z=zmax (electron trajectories will end here):
+		zSel = np.where(iPosMesh[:,2]==S[2]-1, 1, 0)
+		minimaStop = np.where(minMatCum.T * zSel)[0]
 	#--- Find pairs of minima connected by each point:
 	iNZ,iMinNZ = minMatCum.nonzero()
 	sel = np.where(iNZ[:-1]==iNZ[1:])[0] #two adjacent entries having same iNZ
@@ -208,4 +215,8 @@ def minimaGraph(E0, hopDistGrid, kT):
 	#Collect and return outputs:
 	iPosMinima = iPosMesh[minimaIndex] #locations of the minima (grid coordinates)
 	iPosBarrier = iPosMesh[iConnMesh] #locations of barrier points per minima per connection
-	return iPosMinima, iPosBarrier, jMinima, Smesh, minimaStart, minimaStop
+	#--- calculate displacements to each neighbour by minimum image convention:
+	dx = (iPosMinima[jMinima] - iPosMinima[:,None,:]) * (1./S[None,None,:]) #lattice coordinates
+	dx[...,:nPeriodic] -= np.floor(0.5 + dx[...,:nPeriodic]) #minimum image convention
+	jDisp = dx * S[None,None,:] #back to grid coordinates
+	return iPosMinima, iPosBarrier, jMinima, Smesh, minimaStart, minimaStop, jDisp

@@ -53,7 +53,7 @@ class MinimaHoppingMC:
 		printDuration('InitE0')
 		
 		#Calculate graph of minima and connectivity based on this landscape:
-		self.iPosMinima, self.iPosBarrier, self.jMinima, Sbarrier, self.minimaStart, self.minimaStop = minimaGraph(E0, hopDistance/h, kT)
+		self.iPosMinima, self.iPosBarrier, self.jMinima, Sbarrier, self.minimaStart, self.minimaStop, _ = minimaGraph(E0, hopDistance/h, kT)
 		posStride = np.array([S[1]*S[2], S[2], 1]) #indexing stride for cubic mesh
 		E0 = E0.flatten()
 		self.Abarrier0 = (
