@@ -75,6 +75,7 @@ def minimaProbModel(params):
 	
 	#Solve steady state equation:
 	from scipy.sparse.linalg import spsolve
+	import pyamg
 	#--- replace last row with probability normalization
 	sel = np.where(iMinima < nMinima-1)
 	hTyp = np.mean(hopRate) #to scale the last row to be on the same scale
@@ -84,8 +85,12 @@ def minimaProbModel(params):
 	Lhs = csr_matrix((hopRate, (iMinima,jMinima)), shape=(nMinima,nMinima))
 	rhs = np.zeros(nMinima); rhs[-1] = hTyp #RHS for probability normalization
 	printDuration('InitMatrices')
-	p = spsolve(Lhs, rhs, use_umfpack=True)
+	#p = spsolve(Lhs, rhs, use_umfpack=True)
+	ml = pyamg.ruge_stuben_solver(Lhs)
+	print(ml)
+	p = ml.solve(rhs, tol=1e-10)
 	printDuration('SolveSteadyState')
+	print("residual: ", np.linalg.norm(rhs - Lhs*p)) 
 	print(np.sum(p))
 
 #----- Test code -----
