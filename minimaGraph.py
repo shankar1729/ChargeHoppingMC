@@ -7,6 +7,7 @@ Construct a graph of minima connected by energy barriers given inputs:
 	hopDistGrid: hop distance in grid units (used for hopping 'entropy' calculation)
 	kT: kB * T at current temperature T (in same units as E0)
 	zPeriodic: whether z direction is bounded (True) or periodic (False)
+	EzLz: electric field times box length in z direction (only required when zPeriodic=True)
 Outputs:
 	iPosMinima: Grid coordinates of minima (dimensions: nMinima x 3)
 	iPosBarrier: Grid coordinates of barrier positions per minima per connection (dimensions: nMinima x maxDegree x 3)
@@ -16,7 +17,7 @@ Outputs:
 	minimaStop: Set of minima connected to z=zMax (where electron trajectories should end); empty if zPeriodic
 	jDisp: displacement vector to other end of each connection (dimensions: nMinima x maxDegree x 3)
 """
-def minimaGraph(E0, hopDistGrid, kT, zPeriodic=False):
+def minimaGraph(E0, hopDistGrid, kT, zPeriodic=False, EzLz=0.):
 	from scipy.sparse import csr_matrix, diags
 	
 	#Get shape and then flatten for easy indexing:
@@ -42,6 +43,13 @@ def minimaGraph(E0, hopDistGrid, kT, zPeriodic=False):
 	nGrid = len(fccSel)
 	iPosMesh = iPosMesh[fccSel]
 	E0 = E0[fccSel]
+	def EdiffWrapped(i1, i2):
+		#Return indexed energy difference correctly handling z wrapping:
+		deltaE = E0[i1] - E0[i2]
+		if zPeriodic:
+			zMesh = iPosMesh[:,2]
+			deltaE += np.floor(0.5+(zMesh[i1] - zMesh[i2])*(1./S[2])) * EzLz  #account for Efield modification of energies across periodic z boundaries
+		return deltaE
 	nPeriodic = 3 if zPeriodic else 2
 	def initAdjacency():
 		adjMat = csr_matrix((nGrid,nGrid),dtype=np.int)
@@ -62,7 +70,7 @@ def minimaGraph(E0, hopDistGrid, kT, zPeriodic=False):
 			else:
 				ijPosIndex = np.vstack((np.arange(nGrid,dtype=int), fccSelInv[jPosIndexAll]))
 			#Direct each edge so that E[i] > E[j]:
-			swapSel = np.where(E0[ijPosIndex[0]] < E0[ijPosIndex[1]])
+			swapSel = np.where(EdiffWrapped(ijPosIndex[0], ijPosIndex[1]) < 0.)
 			ijPosIndex[:,swapSel] = ijPosIndex[::-1,swapSel]
 			adjMat += csr_matrix((np.ones(ijPosIndex.shape[1],dtype=int), (ijPosIndex[0],ijPosIndex[1])), shape=(nGrid,nGrid))
 		return adjMat
@@ -107,13 +115,13 @@ def minimaGraph(E0, hopDistGrid, kT, zPeriodic=False):
 	iNZ,iMinNZ = minMatCum.nonzero()
 	sel = np.where(iNZ[:-1]==iNZ[1:])[0] #two adjacent entries having same iNZ
 	minimaPairs = np.array([iMinNZ[sel], iMinNZ[sel+1]]) #list of connected iMinima1 and iMinima2 connected
-	swapSel = np.where(E0[minimaIndex[minimaPairs[0]]] < E0[minimaIndex[minimaPairs[1]]])[0]
+	swapSel = np.where(EdiffWrapped(minimaIndex[minimaPairs[0]], minimaIndex[minimaPairs[1]]) < 0.)[0]
 	minimaPairs[:,swapSel] = minimaPairs[::-1,swapSel] #in each pair of minima, put higher energy first
 	pairIndex = nMinima*minimaPairs[0] + minimaPairs[1]
 	iConnection = iNZ[sel] #corresponding connecting point between above pairs
 	printDuration('InitConnections')
-	#--- Sort pairs by minima index, energy of connecting point:
-	sortIndex = np.lexsort([E0[iConnection], pairIndex])
+	#--- Sort pairs by minima index, barrier:
+	sortIndex = np.lexsort([EdiffWrapped(iConnection, minimaIndex[minimaPairs[0]]), pairIndex])
 	pairIndexSorted = np.concatenate([[-1],pairIndex[sortIndex]])
 	iFirstUniq = sortIndex[np.where(pairIndexSorted[:-1]!=pairIndexSorted[1:])[0]]
 	minimaPairs = minimaPairs[:,iFirstUniq]
@@ -123,11 +131,11 @@ def minimaGraph(E0, hopDistGrid, kT, zPeriodic=False):
 	#--- Calculate barrier energies and "entropies" (used to account for nearer barriers reached more easily):
 	def getBarrierES():
 		barrierDisp = iPosMesh[iConnection] - iPosMesh[minimaIndex[minimaPairs[0]]] #displacement to barriers
-		for iDir in range(2): #wrap periodic directions
+		for iDir in range(nPeriodic): #wrap periodic directions
 			barrierDisp[np.where(barrierDisp[:,iDir]<-0.5*S[iDir])[0],iDir] += S[iDir]
 			barrierDisp[np.where(barrierDisp[:,iDir]>+0.5*S[iDir])[0],iDir] -= S[iDir]
 		Sbarrier = -np.log(np.sum(barrierDisp**2, axis=1)/hopDistGrid**2)
-		Ebarrier = E0[iConnection] - E0[minimaIndex[minimaPairs[0]]]
+		Ebarrier = EdiffWrapped(iConnection, minimaIndex[minimaPairs[0]])
 		return Ebarrier, Sbarrier
 	Ebarrier,Sbarrier = getBarrierES()
 	
@@ -202,6 +210,7 @@ def minimaGraph(E0, hopDistGrid, kT, zPeriodic=False):
 	maxDegree = np.max(mDegrees)
 	print 'Degree of connectivity: min:', np.min(mDegrees), 'max:', maxDegree, 'mean:', np.mean(mDegrees)
 	print 'Energy barriers [eV]: min:', np.min(Ebarrier), 'max:', np.max(Ebarrier), 'mean:', np.mean(Ebarrier)
+	print 'Free energy barriers [eV]: min:', np.min(Abarrier), 'max:', np.max(Abarrier), 'mean:', np.mean(Abarrier)
 	#--- make regular mesh of connections by adding dummy connections up to maxDegree if needed:
 	jMinima = np.tile(np.arange(nMinima, dtype=int)[:,None], (1,maxDegree)) #each minima connects to itself
 	iConnMesh = minimaIndex[jMinima] #each trivial connection point is the minima itself
@@ -219,4 +228,6 @@ def minimaGraph(E0, hopDistGrid, kT, zPeriodic=False):
 	dx = (iPosMinima[jMinima] - iPosMinima[:,None,:]) * (1./S[None,None,:]) #lattice coordinates
 	dx[...,:nPeriodic] -= np.floor(0.5 + dx[...,:nPeriodic]) #minimum image convention
 	jDisp = dx * S[None,None,:] #back to grid coordinates
+	jDispMag  = np.sqrt(np.sum(jDisp**2, axis=2))
+	print 'jDisp: min:', np.min(jDispMag), 'max:', np.max(jDispMag)
 	return iPosMinima, iPosBarrier, jMinima, Smesh, minimaStart, minimaStop, jDisp

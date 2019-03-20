@@ -3,6 +3,7 @@ from common import *
 from minimaGraph import *
 from PeriodicFD import *
 from NPClusters import *
+import gc
 
 class MinimaPeriodicMC:
 	
@@ -36,6 +37,7 @@ class MinimaPeriodicMC:
 			print "Actual  Number of nano-particles:", nParticles
 
 		#Initial energy landscape (without inter-electron repulsions):
+		gc.enable()
 		def initEnergyLandscape():
 			#--- calculate polymer internal DOS
 			Epoly = params["dosMu"] + params["dosSigma"]*np.random.randn(*S)
@@ -51,10 +53,11 @@ class MinimaPeriodicMC:
 			#--- combine field and DOS contributions to energy landscape:
 			return phi + np.where(mask, params["trapDepthNP"], Epoly)
 		E0 = initEnergyLandscape()
+		gc.collect()
 		printDuration('InitE0')
 		
 		#Calculate graph of minima and connectivity based on this landscape:
-		self.iPosMinima, self.iPosBarrier, self.jMinima, Sbarrier, _, _, self.jDisp = minimaGraph(E0, hopDistance/h, kT)
+		self.iPosMinima, self.iPosBarrier, self.jMinima, Sbarrier, _, _, self.jDisp = minimaGraph(E0, hopDistance/h, kT, zPeriodic=True, EzLz=params["Efield"]*L[2])
 		posStride = np.array([S[1]*S[2], S[2], 1]) #indexing stride for cubic mesh
 		E0 = E0.flatten()
 		self.Abarrier0 = (
@@ -121,23 +124,26 @@ if __name__ == "__main__":
 		"epsNP": 80., #relative permittivity of nanoparticles
 		"trapDepthNP": -1.1, #trap depth of nanoparticles in eV
 		"radiusNP": 2.5, #radius of nanoparticles in nm
-		"volFracNP": 0., #volume fraction of nanoparticles
+		"volFracNP": 0.0, #volume fraction of nanoparticles
 		"nClusterMu": 30, #mean number of nanoparticles in each cluster (Gaussian distribution)
 		"nClusterSigma": 5, #cluster size standard deviation in nm
 		"clusterShape": "random", #one of "round", "random", "line" or "sheet"
-		"shouldPlotNP": True #plot the electrostatic potential from PeriodicFD
+		"shouldPlotNP": False #plot the electrostatic potential from PeriodicFD
 	}
 	mpmc = MinimaPeriodicMC(params)
+	gc.collect()
 	#mpmc.run(); exit() #uncomment for serial debugging
 	
 	nRuns = params["nRuns"]
 	trajectory = np.concatenate(parallelMap(mpmc.run, cpu_count(), range(nRuns)), axis=0) #Run in parallel and merge trajectories
 	
 	#Analyze trajectory:
-	dt = trajectory[...,0].flatten()
-	disp = trajectory[...,1:].reshape((-1,3))
-	vd = np.mean(disp/dt[:,None]) #drift velocity (nm/s)
-	D = np.mean(np.sum(disp**2, axis=1)/dt) #diffusion coefficient (nm^2/s)
+	dt = trajectory[...,0]
+	disp = trajectory[...,1:]
+	t = np.sum(dt, axis=1) #final times for each electron
+	x = np.sum(disp, axis=1) #final positions for each electron
+	vd = np.sum(x, axis=0)/np.sum(t) #drift velocity (nm/s)
+	D = np.sum((x-vd[None,:]*t[:,None])**2)/np.sum(t)  #diffusion coefficient (nm^2/s)
 	print 'Drift velocity:', vd*1e-9, 'm/s'
 	print 'Diffusion const:', D*1e-18, 'm^2/s'
 	

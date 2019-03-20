@@ -1,7 +1,5 @@
 #!/usr/bin/python
 import numpy as np
-from scipy.special import erfc
-import scipy.sparse as sparse
 
 def periodicFD(L, S, r0, R, epsIn, epsOut, Ez, shouldPlot=False, dirichletBC=True):
 	"""
@@ -14,6 +12,7 @@ def periodicFD(L, S, r0, R, epsIn, epsOut, Ez, shouldPlot=False, dirichletBC=Tru
 	Optionally, if shouldPlot=True, plot slices of the potential for debugging
 	Returns potential (dimensions S) and mask (dimensions S) = 1 inside spheres and 0 outside.
 	"""
+	from common import printDuration
 	#Check inputs:
 	assert L.shape == (3,)
 	assert S.shape == (3,)
@@ -56,20 +55,17 @@ def periodicFD(L, S, r0, R, epsIn, epsOut, Ez, shouldPlot=False, dirichletBC=Tru
 	iPlus = np.reshape(iCur + iOffs, (-1,3))
 	iCur = np.reshape(iCur, (-1,3))
 	edgeVal = 1./(epsInv * h[None,None,None,:]**2).flatten()
-	L_i.extend(iCur) ; L_j.extend(iCur) ; L_val.extend(edgeVal) #diagonal term at iCur
-	L_i.extend(iPlus); L_j.extend(iPlus); L_val.extend(edgeVal) #diagonal term at iPlus
-	L_i.extend(iCur) ; L_j.extend(iPlus); L_val.extend(-edgeVal) #off-diagonal term 1
-	L_i.extend(iPlus); L_j.extend(iCur) ; L_val.extend(-edgeVal) #off-diagonal term 2
-	L_i = np.array(L_i)
-	L_j = np.array(L_j)
-	L_val = np.array(L_val)
+	L_i = np.vstack((iCur, iPlus, iCur, iPlus)) #diagonal terms at iCur and iPlus, followe dby off-diagonal terms
+	L_j = np.vstack((iCur, iPlus, iPlus, iCur))
+	L_val = np.concatenate((edgeVal, edgeVal, -edgeVal, -edgeVal))
+	iCur = None; iPlus = None; edgeVal = None
 	#--- Fix wrap-around terms, constructing rhs term:
 	stride = np.array([S[1]*S[2], S[2], 1], dtype=int)
 	L_iFlat = np.dot(L_i % S[None,:], stride)
 	L_jFlat = np.dot(L_j % S[None,:], stride)
 	rhs = np.zeros((prodS,))
-	iCheck = (L_i[:,2]==S[2])
-	jCheck = (L_j[:,2]==S[2])
+	iCheck = (L_i[:,2]==S[2]); L_i = None
+	jCheck = (L_j[:,2]==S[2]); L_j = None
 	iWrap = np.where(np.logical_and(iCheck, np.logical_not(jCheck)))[0]
 	jWrap = np.where(np.logical_and(jCheck, np.logical_not(iCheck)))[0]
 	if dirichletBC:
@@ -90,9 +86,14 @@ def periodicFD(L, S, r0, R, epsIn, epsOut, Ez, shouldPlot=False, dirichletBC=Tru
 		phi0 -= np.mean(phi0)
 	def precondFunc(x):
 		return np.real(np.fft.ifftn(invGsq * np.fft.fftn(np.reshape(x,S))).flatten())
-	precondOp = sparse.linalg.LinearOperator((prodS,prodS), precondFunc)
+	from scipy.sparse.linalg import LinearOperator, cg
+	from scipy.sparse import csr_matrix
+	precondOp = LinearOperator((prodS,prodS), precondFunc)
 	#Solve matrix equations:
-	Lhs = sparse.csr_matrix((L_val, (L_iFlat, L_jFlat)), shape=(prodS, prodS))
+	Lhs = csr_matrix((L_val, (L_iFlat, L_jFlat)), shape=(prodS, prodS))
+	L_val = None
+	L_iFlat = None
+	L_jFlat = None
 	print 'Matrix dimensions:', Lhs.shape, 'with', Lhs.nnz, 'non-zero elements (fill', '%.2g%%)' % (Lhs.nnz*100./np.prod(Lhs.shape))
 	global nIter
 	nIter = 0
@@ -100,8 +101,9 @@ def periodicFD(L, S, r0, R, epsIn, epsOut, Ez, shouldPlot=False, dirichletBC=Tru
 		global nIter
 		nIter += 1
 		print 'CG iteration', nIter
-	phi,info = sparse.linalg.cg(Lhs, rhs, callback=iterProgress, x0=phi0, M=precondOp, maxiter=100)
+	phi,info = cg(Lhs, rhs, callback=iterProgress, x0=phi0, M=precondOp, maxiter=100)
 	phi = np.reshape(phi,S)
+	Lhs = None; rhs = None
 	#Optional plot:
 	if shouldPlot:
 		import matplotlib.pyplot as plt
@@ -112,7 +114,6 @@ def periodicFD(L, S, r0, R, epsIn, epsOut, Ez, shouldPlot=False, dirichletBC=Tru
 		plt.colorbar()
 		plt.show()
 	return phi, mask
-
 
 #---------- Test code ----------
 if __name__ == "__main__":
