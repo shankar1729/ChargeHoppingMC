@@ -12,7 +12,7 @@ Outputs:
 	iPosMinima: Grid coordinates of minima (dimensions: nMinima x 3)
 	iPosBarrier: Grid coordinates of barrier positions per minima per connection (dimensions: nMinima x maxDegree x 3)
 	jMinima: Minima index at the other end of each connection (dimensions: nMinima x maxDegree)
-	Sbarrier: Hopping entropy for each connection (dimensions: nMinima x maxDegree)
+	Abarrier: Hopping free energy for each connection (dimensions: nMinima x maxDegree)
 	minimaStart: Set of minima connected to z=0 (where electrons should start); empty if zPeriodic
 	minimaStop: Set of minima connected to z=zMax (where electron trajectories should end); empty if zPeriodic
 	jDisp: displacement vector to other end of each connection (dimensions: nMinima x maxDegree x 3)
@@ -36,7 +36,7 @@ def minimaGraph(E0, hopDistGrid, kT, zPeriodic=False, EzLz=0.):
 	neighOffsets = initNeighbors()
 	
 	#Flattened list of grid points and neighbours:
-	print 'Constructing neighbours and adjacency:'
+	print('Constructing neighbours and adjacency:')
 	iPosMesh = flattenedMesh(np.arange(S[0]), np.arange(S[1]), np.arange(S[2]))
 	#--- switch to close-packed mesh
 	fccSel = np.where(np.mod(np.sum(iPosMesh,axis=1),2)==0)[0]
@@ -97,7 +97,7 @@ def minimaGraph(E0, hopDistGrid, kT, zPeriodic=False, EzLz=0.):
 		minMat = diags([pointWeight], [0]) * minMat #stop propagating these rows further
 		pathLength += 1
 		nPoints = minMat.count_nonzero()
-		print '\tPath length:', pathLength, 'nPoints:', nPoints
+		print('\tPath length:', pathLength, 'nPoints:', nPoints)
 	printDuration('InitDomains')
 	
 	#Find saddle points connecting pairs of minima:
@@ -127,7 +127,7 @@ def minimaGraph(E0, hopDistGrid, kT, zPeriodic=False, EzLz=0.):
 	minimaPairs = minimaPairs[:,iFirstUniq]
 	iConnection = iConnection[iFirstUniq] #now index of saddle point
 	printDuration('InitBarriers')
-	print 'nMinima:', nMinima, 'with nConnections:', len(iConnection)
+	print('nMinima:', nMinima, 'with nConnections:', len(iConnection))
 	#--- Calculate barrier energies and "entropies" (used to account for nearer barriers reached more easily):
 	def getBarrierES():
 		barrierDisp = iPosMesh[iConnection] - iPosMesh[minimaIndex[minimaPairs[0]]] #displacement to barriers
@@ -140,7 +140,7 @@ def minimaGraph(E0, hopDistGrid, kT, zPeriodic=False, EzLz=0.):
 	Ebarrier,Sbarrier = getBarrierES()
 	
 	#Prune minima with too low barriers (<~ kT):
-	print 'Pruning low barriers:'
+	print('Pruning low barriers')
 	connPrune = np.where(Ebarrier < -kT*Sbarrier)[0]
 	connKeep = np.where(Ebarrier >= -kT*Sbarrier)[0]
 	#--- Replace higher energy minima with lower energy one along each pruned connection:
@@ -160,7 +160,7 @@ def minimaGraph(E0, hopDistGrid, kT, zPeriodic=False, EzLz=0.):
 	minimaPairs = replaceMap[minimaPairs[:,connKeep]]
 	iConnection = iConnection[connKeep]
 	printDuration('InitPrune')
-	print 'nMinima:', nMinima, 'with nConnections:', len(iConnection)
+	print('nMinima:', nMinima, 'with nConnections:', len(iConnection))
 	
 	"""
 	#Debug code to plot x=0 yz-plane slice of energies and minima:
@@ -208,17 +208,17 @@ def minimaGraph(E0, hopDistGrid, kT, zPeriodic=False, EzLz=0.):
 	#--- determine degrees of connectivity of each minima:
 	mDegrees = np.hstack((startIndex[1:]-startIndex[:-1], len(iConnection)-startIndex[-1]))
 	maxDegree = np.max(mDegrees)
-	print 'Degree of connectivity: min:', np.min(mDegrees), 'max:', maxDegree, 'mean:', np.mean(mDegrees)
-	print 'Energy barriers [eV]: min:', np.min(Ebarrier), 'max:', np.max(Ebarrier), 'mean:', np.mean(Ebarrier)
-	print 'Free energy barriers [eV]: min:', np.min(Abarrier), 'max:', np.max(Abarrier), 'mean:', np.mean(Abarrier)
+	print('Degree of connectivity:    min:', np.min(mDegrees), 'max:', maxDegree, 'mean:', np.mean(mDegrees))
+	print('Energy (0K) barriers [eV]: min:', np.min(Ebarrier), 'max:', np.max(Ebarrier), 'mean:', np.mean(Ebarrier))
+	print('Free energy barriers [eV]: min:', np.min(Abarrier), 'max:', np.max(Abarrier), 'mean:', np.mean(Abarrier))
 	#--- make regular mesh of connections by adding dummy connections up to maxDegree if needed:
 	jMinima = np.tile(np.arange(nMinima, dtype=int)[:,None], (1,maxDegree)) #each minima connects to itself
 	iConnMesh = minimaIndex[jMinima] #each trivial connection point is the minima itself
-	Smesh = np.full(jMinima.shape, -np.Inf) #each such connection will have zero probability of selection
+	Amesh = np.full(jMinima.shape, np.Inf) #each such connection will have zero probability of selection
 	connNumber = np.arange(len(iConnection),dtype=int) - startIndex[minimaPairs[0]] #index of each connection from global list in set of connections from minimaPairs[0]
 	jMinima[minimaPairs[0], connNumber] = minimaPairs[1]
 	iConnMesh[minimaPairs[0], connNumber] = iConnection
-	Smesh[minimaPairs[0], connNumber] = Sbarrier
+	Amesh[minimaPairs[0], connNumber] = Abarrier
 	printDuration('InitGraph')
 	
 	#Collect and return outputs:
@@ -229,5 +229,6 @@ def minimaGraph(E0, hopDistGrid, kT, zPeriodic=False, EzLz=0.):
 	dx[...,:nPeriodic] -= np.floor(0.5 + dx[...,:nPeriodic]) #minimum image convention
 	jDisp = dx * S[None,None,:] #back to grid coordinates
 	jDispMag  = np.sqrt(np.sum(jDisp**2, axis=2))
-	print 'jDisp: min:', np.min(jDispMag), 'max:', np.max(jDispMag)
-	return iPosMinima, iPosBarrier, jMinima, Smesh, minimaStart, minimaStop, jDisp
+	jDispMag = jDispMag[np.where(jDispMag>0.)] #drop self entries
+	print('Edge distances [mesh units]: min:', np.min(jDispMag), 'max:', np.max(jDispMag))
+	return iPosMinima, iPosBarrier, jMinima, Amesh, minimaStart, minimaStop, jDisp

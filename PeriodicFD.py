@@ -47,7 +47,7 @@ def periodicFD(L, S, r0, R, epsIn, epsOut, Ez, shouldPlot=False, dirichletBC=Tru
 	for dim in range(3):
 		maskAv = 0.5*(mask + np.roll(mask, -1, axis=dim))
 		epsInv[...,dim] = 1./epsOut + maskAv*(1./epsIn - 1./epsOut)
-	print 'Average epsInv:', np.mean(epsInv)
+	print('Average epsInv:', np.mean(epsInv))
 	#Construct matrix for div(eps grad()):
 	L_i = []; L_j = []; L_val = []
 	iOffs = np.eye(3, dtype=int)[None,None,None,...]
@@ -94,13 +94,13 @@ def periodicFD(L, S, r0, R, epsIn, epsOut, Ez, shouldPlot=False, dirichletBC=Tru
 	L_val = None
 	L_iFlat = None
 	L_jFlat = None
-	print 'Matrix dimensions:', Lhs.shape, 'with', Lhs.nnz, 'non-zero elements (fill', '%.2g%%)' % (Lhs.nnz*100./np.prod(Lhs.shape))
+	print('Matrix dimensions:', Lhs.shape, 'with', Lhs.nnz, 'non-zero elements (fill', '%.2g%%)' % (Lhs.nnz*100./np.prod(Lhs.shape)))
 	global nIter
 	nIter = 0
 	def iterProgress(x):
 		global nIter
 		nIter += 1
-		print 'CG iteration', nIter
+		print('CG iteration', nIter)
 	phi,info = cg(Lhs, rhs, callback=iterProgress, x0=phi0, M=precondOp, maxiter=100)
 	phi = np.reshape(phi,S)
 	Lhs = None; rhs = None
@@ -109,7 +109,7 @@ def periodicFD(L, S, r0, R, epsIn, epsOut, Ez, shouldPlot=False, dirichletBC=Tru
 		import matplotlib.pyplot as plt
 		plt.figure(1)
 		plotSlice = phi[0,:,:]
-		print np.min(plotSlice), np.max(plotSlice)
+		print(np.min(plotSlice), np.max(plotSlice))
 		plt.imshow(plotSlice)
 		plt.colorbar()
 		plt.show()

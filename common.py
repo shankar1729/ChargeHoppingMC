@@ -15,7 +15,7 @@ if shouldProfile:
 		global tPrev
 		tCur = time.clock()
 		mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-		print 'Time('+label+'):', tCur-tPrev, 's, Mem:', mem/1024, 'MB'
+		print('Time('+label+'):', tCur-tPrev, 's, Mem:', mem/1024, 'MB')
 		tPrev = tCur
 else:
 	def printDuration(label):

@@ -57,14 +57,7 @@ class MinimaPeriodicMC:
 		printDuration('InitE0')
 		
 		#Calculate graph of minima and connectivity based on this landscape:
-		self.iPosMinima, self.iPosBarrier, self.jMinima, Sbarrier, _, _, self.jDisp = minimaGraph(E0, hopDistance/h, kT, zPeriodic=True, EzLz=params["Efield"]*L[2])
-		posStride = np.array([S[1]*S[2], S[2], 1]) #indexing stride for cubic mesh
-		E0 = E0.flatten()
-		self.Abarrier0 = (
-			E0[np.tensordot(self.iPosBarrier, posStride, axes=1)]
-			- E0[np.dot(self.iPosMinima, posStride), None]
-			- kT * Sbarrier )
-		E0 = None #problem reduced to minima graph, no longer need mesh after this
+		self.iPosMinima, self.iPosBarrier, self.jMinima, self.Abarrier0, _, _, self.jDisp = minimaGraph(E0, hopDistance/h, kT, zPeriodic=True, EzLz=params["Efield"]*L[2])
 		
 		#Other parameters:
 		self.h = h
@@ -142,8 +135,8 @@ if __name__ == "__main__":
 	disp = trajectory[...,1:]
 	t = np.sum(dt, axis=1) #final times for each electron
 	x = np.sum(disp, axis=1) #final positions for each electron
-	vd = np.sum(x, axis=0)/np.sum(t) #drift velocity (nm/s)
-	D = np.sum((x-vd[None,:]*t[:,None])**2)/np.sum(t)  #diffusion coefficient (nm^2/s)
+	vd = np.mean(x/t[:,None], axis=0) #drift velocity (nm/s)
+	D = np.mean(np.sum((x-vd[None,:]*t[:,None])**2, axis=1))  #diffusion coefficient (nm^2/s)
 	print 'Drift velocity:', vd*1e-9, 'm/s'
 	print 'Diffusion const:', D*1e-18, 'm^2/s'
 	
