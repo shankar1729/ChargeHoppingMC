@@ -53,7 +53,7 @@ class MinimaHoppingMC:
 		printDuration('InitE0')
 		
 		#Calculate graph of minima and connectivity based on this landscape:
-		self.iPosMinima, self.iPosBarrier, self.jMinima, self.Abarrier0, self.minimaStart, self.minimaStop, _ = minimaGraph(E0, hopDistance/h, kT)
+		self.iPosMinima, self.iPosBarrier, self.jMinima, self.Abarrier0, self.minimaStart, self.minimaStop = minimaGraph(E0, hopDistance/h, kT)
 		
 		#Other parameters:
 		self.h = h
