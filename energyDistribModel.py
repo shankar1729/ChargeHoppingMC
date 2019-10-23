@@ -13,7 +13,7 @@ dE = E[1] - E[0]
 
 #Normalized density of states:
 Esigma = 0.1
-g = np.exp(-0.5*(E/Esigma)**2) + 0.001*np.exp(-0.5*((E+0.8)/0.05)**2)
+g = np.exp(-0.5*(E/Esigma)**2) + 0.05*np.exp(-0.5*((E+0.8)/0.05)**2)
 g *= 1./(dE*np.sum(g)) #normalize
 
 #Transfer matrix of hopping with dE multiplied:
@@ -26,7 +26,7 @@ deqMat = g[:,None]*nu.T - np.diag(np.dot(nu, g))
 def fDot(t, f):
 	return np.dot(deqMat, f)
 
-#Solve and plot
+#Solve
 t = np.concatenate((np.arange(10.), np.logspace(1,5)))
 f0 = np.copy(g)
 res = solve_ivp(fDot, (t.min(),t.max()), f0, t_eval=t)
@@ -39,16 +39,17 @@ fEq *= 1./(dE*np.sum(fEq)) #normalize
 Deq = dE*np.dot(DofE, fEq) #equilibrium diffusion constant
 print('Equilibrium diffusion constant', Deq)
 
+# Plot
 plt.figure(1)
 plt.plot(E, res.y[:,::5])
 plt.xlabel('E [eV]')
 plt.ylabel('f(E) [eV$^{-1}$]')
 
-
 plt.figure(2)
 plt.loglog(t, D)
 plt.loglog(t, 0.6*t**-0.6 + 0.0074)
-plt.xlabel('t [a.u.]')
-plt.ylabel('D [a.u.]')
+plt.xlabel('t [arb.u.]')
+plt.ylabel('D [arb.u.]')
+plt.savefig("DofT.pdf")
 
 plt.show()
