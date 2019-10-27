@@ -3,6 +3,8 @@ from common import *
 from minimaGraph import *
 from PeriodicFD import *
 from NPClusters import *
+import matplotlib.pyplot as plt
+
 
 class MinimaHoppingMC:
 	
@@ -23,26 +25,15 @@ class MinimaHoppingMC:
 		#Initialize nano-particle parameters
 		epsNP = params["epsNP"]
 		epsBG = params["epsBG"]
-		radiusNP = params["radiusNP"]
-		volFracNP = params["volFracNP"]
-		clusterShape = params["clusterShape"]
-		nParticles = np.round(np.prod(S)*volFracNP/(4./3*np.pi*(radiusNP)**3)).astype(int) #total number of nano-particles
-		print "Desired Number of nano-particles:", nParticles
-		if nParticles:
-			print "Cluster Shape:", clusterShape
-			shouldPlotNP = params["shouldPlotNP"]
-			positionsNP, radiusArr = NPClusters(clusterShape, radiusNP, nParticles, params["nClusterMu"], params["nClusterSigma"], L)
-			nParticles = positionsNP.shape[0]
-			print "Actual  Number of nano-particles:", nParticles
-
-		#Initial energy landscape (without inter-electron repulsions):
+		shouldPlotNP = params["shouldPlotNP"]
 		def initEnergyLandscape():
 			#--- calculate polymer internal DOS
 			Epoly = params["dosMu"] + params["dosSigma"]*np.random.randn(*S)
 			#--- calculate electric field contributions and mask:
 			Ez = params["Efield"]
-			if nParticles:
-				phi, mask = periodicFD(L, S, positionsNP, radiusArr, epsNP, epsBG, Ez, shouldPlotNP)
+			mask = params["mask"]
+			if len(mask)>0:
+				phi, mask = periodicFD(L, S, mask, epsNP, epsBG, Ez, shouldPlotNP)
 			else:
 				z = h * np.arange(S[2])
 				phi = -Ez * np.tile(z, (S[0],S[1],1))
@@ -50,6 +41,11 @@ class MinimaHoppingMC:
 			#--- combine field and DOS contributions to energy landscape:
 			return phi + np.where(mask, params["trapDepthNP"], Epoly)
 		E0 = initEnergyLandscape()
+		# plot a slice of E0
+		plt.figure()
+		plt.imshow(E0[5,...], origin='lower'); plt.colorbar()
+		plt.savefig('mhmc-e0.pdf')
+		
 		printDuration('InitE0')
 		
 		#Calculate graph of minima and connectivity based on this landscape:
@@ -92,9 +88,20 @@ class MinimaHoppingMC:
 	def run(self, iRun=0):
 		
 		np.random.seed()	#Generate a new seed for every run
-		print 'Starting MC run', iRun
+		print('Starting MC run', iRun)
 		#Inject electrons in randomly chozen z=0 connected minima:
 		iMinima = self.minimaStart[np.random.permutation(len(self.minimaStart))[:self.nElectrons]]
+		
+		# plot nodes of the graph
+		plt.figure()
+		colors = np.ones(self.iPosMinima.shape[0])
+		colors[self.minimaStart]=2
+		colors[self.minimaStop]=3
+		colors[iMinima]=4
+		plt.scatter(self.iPosMinima[:,2], self.iPosMinima[:,1], c=colors, marker='+')
+		plt.xlabel('Z'); plt.ylabel('Y')
+		plt.colorbar()
+		plt.savefig('minima.pdf')
 		
 		#Initialize trajectory: list of electron number, time of event and grid position
 		t = 0 #time of latest hop
@@ -105,7 +112,7 @@ class MinimaHoppingMC:
 		Abarrier0 = self.Abarrier0[iMinima] #dimensions: [nElectrons,nConnections]
 		coulomb = np.zeros(Abarrier0.shape)
 		if self.useCoulomb:
-			print 'Calculating initial coulomb interactions in run', iRun
+			print('Calculating initial coulomb interactions in run', iRun)
 			for iElectron,iPos0 in enumerate(self.iPosMinima[iMinima]): #for each minimum position with an electron
 				coulomb += ( self.getCoulomb(self.iPosBarrier[iMinima], iPos0, iElectron) #coulomb at barrier
 					- self.getCoulomb(self.iPosMinima[iMinima], iPos0, iElectron)[:,None] ) #coulomb at minimum
@@ -147,7 +154,7 @@ class MinimaHoppingMC:
 			trajectory.append((iHop+nElectronOffset, t) + tuple(iPosNew))
 			if iPosNew[2] > izMax:
 				izMax = iPosNew[2]
-				print "Run", iRun, "reached", izMax*self.h, "nm at t =", t, "s"
+				print("Run", iRun, "reached", izMax*self.h, "nm at t =", t, "s")
 			if np.in1d(jMinimaHop, self.minimaStop):
 				break #Terminate: an electron has reached end of box
 			#--- update cached energies:
@@ -162,14 +169,14 @@ class MinimaHoppingMC:
 						- self.getCoulomb(self.iPosMinima[iMinima], iPosNew, iHop)[:,None], #coulomb at minimum
 					 axis=0 )
 		
-		print 'End MC run', iRun, ' with trajectory length:', len(trajectory), 'events'
+		print('End MC run', iRun, ' with trajectory length:', len(trajectory), 'events')
 		return np.array(trajectory, dtype=np.dtype('i8,f8,i8,i8,i8'))
 
 #----- Test code -----
 if __name__ == "__main__":
 	params = { 
-		"L": [ 1, 1e3, 1e3 ], #box size in nm
-		"h": 1., #grid spacing in nm
+		"L": [ 50, 1089, 1089], #box size in nm
+		"h": 2., #grid spacing in nm
 		"Efield": 0.06, #electric field in V/nm
 		"dosSigma": 0.224, #dos standard deviation in eV
 		"dosMu": 0.0, #dos center in eV
@@ -177,19 +184,19 @@ if __name__ == "__main__":
 		"hopDistance": 1., #average hop distance in nm
 		"hopFrequency": 1e12, #attempt frequency in Hz
 		"nElectrons": 16, #number of electrons to track
-		"maxHops": 5e4, #maximum hops per MC runs
+		"maxHops": 1e5, #maximum hops per MC runs
 		"nRuns": 16, #number of MC runs
 		"tMax": 1e3, #stop simulation at this time from start in seconds
-		"epsBG": 2.5, #relative permittivity of polymer
+		"epsBG": 2.6, #relative permittivity of polymer
 		"useCoulomb": True, #whether to include e-e Coulomb interactions
 		#--- Nano-particle parameters
-		"epsNP": 10., #relative permittivity of nanoparticles
+		"epsNP": 3.6, #relative permittivity of nanoparticles
 		"trapDepthNP": -1.1, #trap depth of nanoparticles in eV
-		"radiusNP": 2.5, #radius of nanoparticles in nm
+		"radiusNP": 7, #radius of nanoparticles in nm
 		"volFracNP": 0.02, #volume fraction of nanoparticles
 		"nClusterMu": 30, #mean number of nanoparticles in each cluster (Gaussian distribution)
 		"nClusterSigma": 5, #cluster size standard deviation in nm
-		"clusterShape": "file", #one of "round", "random", "line" or "sheet"
+		"clusterShape": "random", #one of "round", "random", "line" or "sheet"
 		"shouldPlotNP": False #plot the electrostatic potential from PeriodicFD
 	}
 	mhmc = MinimaHoppingMC(params)
