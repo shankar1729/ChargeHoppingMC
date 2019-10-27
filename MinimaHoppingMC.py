@@ -98,9 +98,12 @@ class MinimaHoppingMC:
 		colors[self.minimaStart]=2
 		colors[self.minimaStop]=3
 		colors[iMinima]=4
-		plt.scatter(self.iPosMinima[:,2], self.iPosMinima[:,1], c=colors, marker='+')
+		labels=['All', 'Start', 'End', 'Init']
+		for i in range(4):
+			iSel = np.where(colors==i+1)
+			plt.scatter(self.iPosMinima[iSel,2], self.iPosMinima[iSel,1], marker='+', label=labels[i])
 		plt.xlabel('Z'); plt.ylabel('Y')
-		plt.colorbar()
+		plt.legend()
 		plt.savefig('minima.pdf')
 		
 		#Initialize trajectory: list of electron number, time of event and grid position

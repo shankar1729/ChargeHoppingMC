@@ -1,7 +1,7 @@
 #!/usr/bin/python
 import numpy as np
 
-def periodicFD(L, S, r0, R, epsIn, epsOut, Ez, shouldPlot=False, dirichletBC=True):
+def periodicFD(L, S, mask, epsIn, epsOut, Ez, shouldPlot=False, dirichletBC=True):
 	"""
 	Calculate electrostatic potential in a box of size L (dimensions [3,])
 	with grid sample counts S (dimensions [3,]; integer) assumed to be
@@ -17,9 +17,9 @@ def periodicFD(L, S, r0, R, epsIn, epsOut, Ez, shouldPlot=False, dirichletBC=Tru
 	assert L.shape == (3,)
 	assert S.shape == (3,)
 	Omega = np.prod(L) #unit cell volume
-	assert r0.shape[1] == 3
-	N = r0.shape[0] #number of spheres
-	assert R.shape == (N,)
+	#assert r0.shape[1] == 3
+	#N = r0.shape[0] #number of spheres
+	#assert R.shape == (N,)
 	assert isinstance(epsIn, float)
 	assert isinstance(epsOut, float)
 	assert isinstance(Ez, float)
@@ -31,17 +31,17 @@ def periodicFD(L, S, r0, R, epsIn, epsOut, Ez, shouldPlot=False, dirichletBC=Tru
 	iMesh = np.concatenate((i0[...,None], i1[...,None], i2[...,None]), axis=-1)
 	x = iMesh * h[None,None,None,:]
 	#Calculate mask on grid points:
-	mask = np.zeros(S)
-	for i in range(N):
-		#Construct sphere in bounding box
-		r0offset = np.round(r0[i] / h).astype(int)
-		SiHlf = np.ceil(R[i] / h).astype(int)
-		Si = 1+2*SiHlf
-		i0,i1,i2 = np.meshgrid(np.arange(Si[0])-SiHlf[0], np.arange(Si[1])-SiHlf[1], np.arange(Si[2])-SiHlf[2], indexing='ij')
-		rSq = np.sum((np.concatenate((i0[...,None], i1[...,None], i2[...,None]), axis=-1) * h[None,None,None,:])**2, axis=-1)
-		iSphere = np.array(np.where(rSq < R[i]**2)) #list of indices within sphere, in bbox coordinates
-		iSphere = np.mod(iSphere + (r0offset - SiHlf)[:,None], S[:,None]) #list of indices within sphere, in global coordinates
-		mask[iSphere[0],iSphere[1],iSphere[2]] = 1
+	#mask = np.zeros(S)
+	#for i in range(N):
+		##Construct sphere in bounding box
+		#r0offset = np.round(r0[i] / h).astype(int)
+		#SiHlf = np.ceil(R[i] / h).astype(int)
+		#Si = 1+2*SiHlf
+		#i0,i1,i2 = np.meshgrid(np.arange(Si[0])-SiHlf[0], np.arange(Si[1])-SiHlf[1], np.arange(Si[2])-SiHlf[2], indexing='ij')
+		#rSq = np.sum((np.concatenate((i0[...,None], i1[...,None], i2[...,None]), axis=-1) * h[None,None,None,:])**2, axis=-1)
+		#iSphere = np.array(np.where(rSq < R[i]**2)) #list of indices within sphere, in bbox coordinates
+		#iSphere = np.mod(iSphere + (r0offset - SiHlf)[:,None], S[:,None]) #list of indices within sphere, in global coordinates
+		#mask[iSphere[0],iSphere[1],iSphere[2]] = 1
 	#Calculate epsInv on edges:
 	epsInv = np.zeros(x.shape) #extra dimension is for edge direction
 	for dim in range(3):

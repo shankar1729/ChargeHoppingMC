@@ -6,7 +6,7 @@ Construct a graph of minima connected by energy barriers given inputs:
 	E0: energy landscape on a regular 3D mesh (dimensions: S[0] x S[1] x S[2])
 	hopDistGrid: hop distance in grid units (used for hopping 'entropy' calculation)
 	kT: kB * T at current temperature T (in same units as E0)
-	zPeriodic: whether z direction is bounded (True) or periodic (False)
+	zPeriodic: whether z direction is bounded (False) or periodic (True)
 Outputs:
 	if zPeriodic:
 		Eminima: Free energies per minima (dimensions: nMinima)
@@ -28,6 +28,7 @@ def minimaGraph(E0, hopDistGrid, kT, zPeriodic=False):
 	#Get shape and then flatten for easy indexing:
 	S = np.array(E0.shape)
 	E0 = E0.flatten()
+	assert(np.all(S % 2 == 0)) #only supports even grid dimensions
 	
 	#Set up connectivity:
 	def initNeighbors():
@@ -54,7 +55,7 @@ def minimaGraph(E0, hopDistGrid, kT, zPeriodic=False):
 	def initAdjacency():
 		adjMat = csr_matrix((nGrid,nGrid),dtype=np.int)
 		posStride = np.array([S[1]*S[2], S[2], 1]) #indexing stride for cubic mesh
-		fccSelInv = np.zeros((np.prod(S),), dtype=int) #initialize inverse of fccSel ...
+		fccSelInv = np.full((np.prod(S),), -1, dtype=int) #initialize inverse of fccSel ...
 		fccSelInv[fccSel] = np.arange(nGrid, dtype=int) #... for use in indexing below
 		for neighOffset in neighOffsets:
 			jPosMesh = iPosMesh + neighOffset[None,:]
@@ -69,6 +70,7 @@ def minimaGraph(E0, hopDistGrid, kT, zPeriodic=False):
 				ijPosIndex = np.vstack((zjValid, fccSelInv[jPosIndexAll[zjValid]]))
 			else:
 				ijPosIndex = np.vstack((np.arange(nGrid,dtype=int), fccSelInv[jPosIndexAll]))
+			print(neighOffset); assert(np.all(ijPosIndex >= 0))
 			#Direct each edge so that E[i] > E[j]:
 			swapSel = np.where(getEdiff(ijPosIndex[0], ijPosIndex[1]) < 0.)
 			ijPosIndex[:,swapSel] = ijPosIndex[::-1,swapSel]
@@ -88,7 +90,7 @@ def minimaGraph(E0, hopDistGrid, kT, zPeriodic=False):
 	minMatCum = minMat
 	pathLength = 0
 	nPoints = nMinima
-	while nPoints:
+	while nPoints and pathLength<10:
 		minMat = adjMat * minMat
 		minMatCum += minMat
 		#Stop propagating points already connected to >=2 minima:
@@ -149,27 +151,27 @@ def minimaGraph(E0, hopDistGrid, kT, zPeriodic=False):
 		return Eminima, Econn, iMinima, jMinima, disp
 	
 	#Prune minima with too low barriers (<~ kT):
-	#print('Pruning low barriers')
-	#connPrune = np.where(Ebarrier < -kT*Sbarrier)[0]
-	#connKeep = np.where(Ebarrier >= -kT*Sbarrier)[0]
-	##--- Replace higher energy minima with lower energy one along each pruned connection:
-	#while len(np.intersect1d(minimaPairs[0,connPrune], minimaPairs[1,connPrune])):
-		#replaceMap = np.arange(nMinima, dtype=int)
-		#replaceMap[minimaPairs[0,connPrune]] = minimaPairs[1,connPrune]
-		#minimaPairs[1,connPrune] = replaceMap[minimaPairs[1,connPrune]]
-	#minKeep = np.setdiff1d(np.arange(nMinima), minimaPairs[0,connPrune])
-	#replaceMap = np.arange(nMinima, dtype=int)
-	#replaceMap[minKeep] = np.arange(len(minKeep),dtype=int) #now with renumbering to account for removed minima
-	#replaceMap[minimaPairs[0,connPrune]] = replaceMap[minimaPairs[1,connPrune]] #now all in range [0,len(minKeep))
-	##--- Apply replacements:
-	#minimaIndex = minimaIndex[minKeep]
-	#nMinima = len(minKeep)
-	#minimaStart = replaceMap[minimaStart]
-	#minimaStop = replaceMap[minimaStop]
-	#minimaPairs = replaceMap[minimaPairs[:,connKeep]]
-	#iConnection = iConnection[connKeep]
-	#printDuration('InitPrune')
-	#print('nMinima:', nMinima, 'with nConnections:', len(iConnection))
+	print('Pruning low barriers')
+	connPrune = np.where(Ebarrier < -kT*Sbarrier)[0]
+	connKeep = np.where(Ebarrier >= -kT*Sbarrier)[0]
+	#--- Replace higher energy minima with lower energy one along each pruned connection:
+	while len(np.intersect1d(minimaPairs[0,connPrune], minimaPairs[1,connPrune])):
+		replaceMap = np.arange(nMinima, dtype=int)
+		replaceMap[minimaPairs[0,connPrune]] = minimaPairs[1,connPrune]
+		minimaPairs[1,connPrune] = replaceMap[minimaPairs[1,connPrune]]
+	minKeep = np.setdiff1d(np.arange(nMinima), minimaPairs[0,connPrune])
+	replaceMap = np.arange(nMinima, dtype=int)
+	replaceMap[minKeep] = np.arange(len(minKeep),dtype=int) #now with renumbering to account for removed minima
+	replaceMap[minimaPairs[0,connPrune]] = replaceMap[minimaPairs[1,connPrune]] #now all in range [0,len(minKeep))
+	#--- Apply replacements:
+	minimaIndex = minimaIndex[minKeep]
+	nMinima = len(minKeep)
+	minimaStart = replaceMap[minimaStart]
+	minimaStop = replaceMap[minimaStop]
+	minimaPairs = replaceMap[minimaPairs[:,connKeep]]
+	iConnection = iConnection[connKeep]
+	printDuration('InitPrune')
+	print('nMinima:', nMinima, 'with nConnections:', len(iConnection))
 	
 	#Debug code to plot x=0 yz-plane slice of energies and minima:
 	import matplotlib.pyplot as plt

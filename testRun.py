@@ -9,7 +9,7 @@ from CarrierHoppingMC import *
 from MinimaHoppingMC import *
 
 sampleImg = loadmat('sampleTEM.mat')['img_out'][:200,:200]
-microStr = convolveTEM(sampleImg, 15, 7, 7, 0.0143)
+microStr = convolveTEM(sampleImg, 16, 7, 7, 0.0143)
 print(microStr.shape, sampleImg.shape)
 
 # plot input microstructures
@@ -25,7 +25,7 @@ print(microStr.shape, sampleImg.shape)
 params = { 
     "L": microStr.shape, #box size in pixels
     "h": 1., #grid spacing in pixels
-    "Efield": 0.001, #electric field in V/nm
+    "Efield": 0.06, #electric field in V/nm
     "dosSigma": 0.224, #dos standard deviation in eV
     "dosMu": 0.0, #dos center in eV
     "T": 298., #temperature in Kelvin
