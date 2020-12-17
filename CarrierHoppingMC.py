@@ -17,31 +17,18 @@ class CarrierHoppingMC:
 		S = np.round(np.array(params["L"])/h).astype(int) #number of grid points
 		L = h * S #box size rounded to integer number of grid points
 
-		#Initialize nano-particle parameters
+		#Initialize dielecttric profile and energy landscape
 		epsNP = params["epsNP"]
 		epsBG = params["epsBG"]
-		radiusNP = params["radiusNP"]
-		volFracNP = params["volFracNP"]
-		clusterShape = params["clusterShape"]
-		nParticles = np.round(np.prod(S)*volFracNP/(4./3*np.pi*(radiusNP)**3)).astype(int) #total number of nano-particles
-		print "Desired Number of nano-particles:", nParticles
-		if nParticles:
-			#Initialize nano-particle distribution in the polymer matrix
-			print "Cluster Shape:", clusterShape
-			shouldPlotNP = params["shouldPlotNP"]
-			positionsNP = NPClusters(clusterShape, radiusNP, nParticles, params["nClusterMu"], params["nClusterSigma"], L)
-			nParticles = positionsNP.shape[0]
-			radiusNP = np.ones(nParticles)*radiusNP #array of NP radii
-			print "Actual  Number of nano-particles:", nParticles
-	
-		#Initial energy landscape (without inter-electron repulsions):
+		shouldPlotNP = params["shouldPlotNP"]
 		def initEnergyLandscape():
 			#--- calculate polymer internal DOS
 			Epoly = params["dosMu"] + params["dosSigma"]*np.random.randn(*S)
 			#--- calculate electric field contributions and mask:
 			Ez = params["Efield"]
-			if nParticles:
-				phi, mask = periodicFD(L, S, positionsNP, radiusNP, epsNP, epsBG, Ez, shouldPlotNP)
+			mask = params["mask"]
+			if len(mask)>0:
+				phi, mask = periodicFD(L, S, mask, epsNP, epsBG, Ez, shouldPlotNP)
 			else:
 				z = h * np.arange(S[2])
 				phi = -Ez * np.tile(z, (S[0],S[1],1))
@@ -108,7 +95,7 @@ class CarrierHoppingMC:
 	def run(self, iRun=0):
 		
 		np.random.seed()	#Generate a new seed for every run
-		print 'Starting MC run', iRun
+		print('Starting MC run', iRun)
 		#Initialize electron positions (in grid coordinates)
 		iPosElectron = np.vstack((
 			np.random.randint(self.S[0], size=(1,self.nElectrons)),
@@ -122,7 +109,6 @@ class CarrierHoppingMC:
 		# -----------(ADDED TO TRAJECTORY) ------------
 		nElectronOffset = iRun*self.nElectrons
 		trajectory = [ (iElectron+nElectronOffset, t) + tuple(iPos) for iElectron,iPos in enumerate(iPosElectron.T) ]
-		print iElectron,iPos,iElectron,nElectronOffset,"\n"	
 		#Initial energy of each electron and its neighbourhood
 		#--- Fetch energy at each electron:
 		E0electron = self.E0[
@@ -182,7 +168,7 @@ class CarrierHoppingMC:
 			trajectory.append((iHop+nElectronOffset, t) + tuple(iPosNew))
 			if iPosNew[2] > izMax:
 				izMax = iPosNew[2]
-				print "Run", iRun, "reached", izMax/self.h, "nm at t =", t, "s"
+				print("Run", iRun, "reached", izMax/self.h, "nm at t =", t, "s")
 				if izMax >= self.S[2] - self.irMax:
 					break #Terminate: an electron has reached end of box
 			#--- update cached energies:
@@ -201,7 +187,7 @@ class CarrierHoppingMC:
 				#--- update Coulomb energies of all other electrons:
 				coulomb -= self.coulombLandscape(iPosElectron - iPosOld[:,None], iHop) #remove contribution from old position of iHop'th electron
 				coulomb += self.coulombLandscape(iPosElectron - iPosNew[:,None], iHop) #remove contribution from old position of iHop'th electron
-		print 'End MC run', iRun, 'with trajectory length:', len(trajectory), 'events'	
+		print('End MC run', iRun, 'with trajectory length:', len(trajectory), 'events')
 		return np.array(trajectory, dtype=np.dtype('i8,f8,i8,i8,i8'))
 	
 #----- Test code -----

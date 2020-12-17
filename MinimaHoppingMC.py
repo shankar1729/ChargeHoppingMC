@@ -22,7 +22,7 @@ class MinimaHoppingMC:
 		kT = kB * params["T"]
 		hopDistance = params["hopDistance"]
 
-		#Initialize nano-particle parameters
+		#Initialize dielecttric profile and energy landscape
 		epsNP = params["epsNP"]
 		epsBG = params["epsBG"]
 		shouldPlotNP = params["shouldPlotNP"]

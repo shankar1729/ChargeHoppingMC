@@ -42,10 +42,10 @@ params = {
     "shouldPlotNP": False, #plot the electrostatic potential from PeriodicFD
     "mask": microStr
 }
-mhmc = MinimaHoppingMC(params)
-mhmc.run(); exit() 
-#chmc = CarrierHoppingMC(params)
-#chmc.run(); exit()
+#mhmc = MinimaHoppingMC(params)
+#mhmc.run(); exit() 
+chmc = CarrierHoppingMC(params)
+chmc.run(); exit()
 
 #trajectory = chmc.run()
 #nRuns = 1
