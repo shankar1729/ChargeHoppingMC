@@ -28,13 +28,14 @@ class CarrierHoppingMC:
 			Ez = params["Efield"]
 			mask = params["mask"]
 			if len(mask)>0:
-				phi, mask = periodicFD(L, S, mask, epsNP, epsBG, Ez, shouldPlotNP)
+				print('Solving Poisson equation:')
+				phi = periodicFD(L, mask, epsNP, epsBG, Ez, shouldPlotNP)
 			else:
 				z = h * np.arange(S[2])
 				phi = -Ez * np.tile(z, (S[0],S[1],1))
 				mask = np.zeros(phi.shape)
 			#--- combine field and DOS contributions to energy landscape:
-			return phi + np.where(mask, params["trapDepthNP"], Epoly)
+			return phi + np.where(mask>0.5, params["trapDepthNP"], Epoly)
 		self.E0 = initEnergyLandscape()
 		printDuration('InitE0')
 		

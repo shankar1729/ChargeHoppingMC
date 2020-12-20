@@ -33,7 +33,7 @@ class MinimaHoppingMC:
 			Ez = params["Efield"]
 			mask = params["mask"]
 			if len(mask)>0:
-				phi, mask = periodicFD(L, S, mask, epsNP, epsBG, Ez, shouldPlotNP)
+				phi = periodicFD(L, mask, epsNP, epsBG, Ez, shouldPlotNP)
 			else:
 				z = h * np.arange(S[2])
 				phi = -Ez * np.tile(z, (S[0],S[1],1))
