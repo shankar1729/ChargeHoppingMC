@@ -13,7 +13,6 @@ def periodicFD(L, mask, epsIn, epsOut, Ez, shouldPlot=False, dirichletBC=True, c
 	otherwise it is treated as periodic.
 	If computeEps=True, then return [eps_xz, eps_yz, eps_zz] instead of phi. (Requires dirichletBC=False.)
 	"""
-	from common import printDuration
 	#Check inputs:
 	assert L.shape == (3,)
 	assert len(mask.shape) == 3
@@ -30,18 +29,15 @@ def periodicFD(L, mask, epsIn, epsOut, Ez, shouldPlot=False, dirichletBC=True, c
 	hMax = np.max(h)
 	i0,i1,i2 = np.meshgrid(np.arange(S[0]), np.arange(S[1]), np.arange(S[2]), indexing='ij')
 	iMesh = np.concatenate((i0[...,None], i1[...,None], i2[...,None]), axis=-1)
-	x = iMesh * h[None,None,None,:]
 	#Calculate epsInv on edges:
-	epsInv = np.zeros(x.shape) #extra dimension is for edge direction
+	epsInv = np.zeros(iMesh.shape) #extra dimension is for edge direction
 	for dim in range(3):
 		maskAv = 0.5*(mask + np.roll(mask, -1, axis=dim))
 		epsInv[...,dim] = 1./epsOut + maskAv*(1./epsIn - 1./epsOut)
 	print('\tAverage epsInv:', np.mean(epsInv))
 	#Construct matrix for div(eps grad()):
-	L_i = []; L_j = []; L_val = []
-	iOffs = np.eye(3, dtype=int)[None,None,None,...]
 	iCur = np.repeat(iMesh[...,None,:], 3, axis=-2)
-	iPlus = np.reshape(iCur + iOffs, (-1,3))
+	iPlus = np.reshape(iCur + np.eye(3, dtype=int)[None,None,None,...], (-1,3))
 	iCur = np.reshape(iCur, (-1,3))
 	edgeVal = 1./(epsInv * h[None,None,None,:]**2).flatten()
 	L_i = np.vstack((iCur, iPlus, iCur, iPlus)) #diagonal terms at iCur and iPlus, followed by off-diagonal terms
@@ -69,7 +65,7 @@ def periodicFD(L, mask, epsIn, epsOut, Ez, shouldPlot=False, dirichletBC=True, c
 	Gsq = np.sum((iG * (2*np.pi/L[None,:]))**2, axis=-1)
 	Gsq[0] = np.min(Gsq[1:])
 	invGsq = np.reshape(1./Gsq, S)
-	phi0 = -Ez*x[...,2].flatten()
+	phi0 = -Ez*h[2]*iMesh[...,2].flatten()
 	if not dirichletBC:
 		invGsq[0,0,0] = 0. #periodic G=0 projection
 		phi0 -= np.mean(phi0)

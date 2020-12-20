@@ -95,7 +95,7 @@ class CarrierHoppingMC:
 	"""
 	def run(self, iRun=0):
 		
-		np.random.seed()	#Generate a new seed for every run
+		np.random.seed(iRun) #Generate a new seed for every run
 		print('Starting MC run', iRun)
 		#Initialize electron positions (in grid coordinates)
 		iPosElectron = np.vstack((
