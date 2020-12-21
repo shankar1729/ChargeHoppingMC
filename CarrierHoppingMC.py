@@ -29,7 +29,7 @@ class CarrierHoppingMC:
 			mask = params["mask"]
 			if len(mask)>0:
 				print('Solving Poisson equation:')
-				phi = periodicFD(L, mask, epsNP, epsBG, Ez, shouldPlotNP)
+				phi = PeriodicFD(L, mask, epsNP, epsBG, [False,False,True]).solve([0,0,Ez], shouldPlotNP)
 			else:
 				z = h * np.arange(S[2])
 				phi = -Ez * np.tile(z, (S[0],S[1],1))

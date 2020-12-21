@@ -11,10 +11,10 @@ shouldProfile = True
 if shouldProfile:
 	import time
 	import resource
-	tPrev = time.clock()
+	tPrev = time.time()
 	def printDuration(label):
 		global tPrev
-		tCur = time.clock()
+		tCur = time.time()
 		mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
 		print('Time('+label+'):', tCur-tPrev, 's, Mem:', mem/1024, 'MB')
 		tPrev = tCur

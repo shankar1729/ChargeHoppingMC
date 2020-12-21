@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from scipy.io import loadmat
 from scipy.special import erfc
 from CarrierHoppingMC import CarrierHoppingMC
-from PeriodicFD import computeEps
+from PeriodicFD import PeriodicFD
 from common import *
 
 #Extract information from matlab file:
@@ -83,7 +83,7 @@ muErr = mu.std() / np.sqrt(nElectrons) #standard error in average mobility
 print('Mobility:', muMean, '+/-', muErr)
 
 #Compute dielectric function:
-epsEff = computeEps(np.array(L), mask, params['epsNP'], params['epsBG'])
+epsEff = PeriodicFD(np.array(L), mask, params['epsNP'], params['epsBG']).computeEps()
 epsAvg = np.trace(epsEff)/3
 print('epsAvg:', epsAvg)
 print('epsTensor:\n', epsEff)
