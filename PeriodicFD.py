@@ -119,7 +119,7 @@ class PeriodicFD:
 			nIter += 1
 			print(nIter, end=' ', flush=True)
 		print('\tCG: ', end='', flush=True)
-		phi,info = cg(self.Lhs, rhs, callback=iterProgress, x0=phi, M=precondOp, maxiter=100)
+		phi,info = cg(self.Lhs, rhs, tol=1e-6, callback=iterProgress, x0=phi, M=precondOp, maxiter=100)
 		print('done.', flush=True)
 		phi = np.reshape(phi,S)
 		rhs = None
@@ -133,19 +133,39 @@ class PeriodicFD:
 			plt.show()
 		return phi
 
-	def computeEps(self):
+	def computeEps(self, deriv=False):
 		"""
-		Compute dielectric tensor (must have dirichletBC = False in all directions
+		Compute dielectric tensor (must have dirichletBC = False in all directions).
+		If deriv=True, also return d(epsEff)/d(self.epsIn) and d(epsEff)/d(self.epsOut)
 		"""
 		assert (not np.any(self.dirichletBC)) #all directions must be periodic
 		print('Computing dielectric tensor:')
 		epsEff = np.zeros((3,3))
+		epsEff_epsIn = np.zeros((3,3)) #optional derivative w.r.t. self.epsIn
+		epsEff_epsOut = np.zeros((3,3)) #optional derivative w.r.t. self.epsOut
 		S = np.array(self.mask.shape)
+		prodS = S.prod()
 		h = self.L / S
+		
+		#Preconditioner for first-order solve below:
+		def precondFunc(x):
+			return np.real(np_fft.ifftn(self.invGsq * np_fft.fftn(np.reshape(x,S))).flatten())
+		precondOp = LinearOperator((prodS,prodS), precondFunc)
+		#Iteration progress for first-order solve below: 
+		global nIter
+		def iterProgress(x):
+			global nIter
+			nIter += 1
+			print(nIter, end=' ', flush=True)
+		
+		#Loop over E-field perturbations:
 		for dim1 in range(3):
 			#Get potential for unit field applied in current direction:
 			E = [0,0,0]; E[dim1]=1
 			phi = self.solve(E)
+			if deriv:
+				Lphi_in = np.zeros(S)  #(dL/depsIn)(phi) where L is the modified Poisson operator
+				Lphi_out = np.zeros(S) #(dL/depsOut)(phi) where L is the modified Poisson operator
 			#Compute D, which is effectively the same as dielectric since E = 1
 			for dim2 in range(3):
 				phiDiff = phi - np.roll(phi, -1, axis=dim2)
@@ -153,9 +173,45 @@ class PeriodicFD:
 					slc = [slice(None)] * 3
 					slc[dim1] = -1
 					phiDiff[tuple(slc)] += self.L[dim2]
-				epsEff[dim1,dim2] = np.mean(phiDiff / (h[dim2]*(1./self.epsOut + ((1./self.epsIn - 1./self.epsOut)*0.5)*(self.mask + np.roll(self.mask, -1, axis=dim2)))))
+				maskMean = 0.5*(self.mask + np.roll(self.mask, -1, axis=dim2)) #mean of mask along edge endpoints
+				epsEff[dim1,dim2] = np.mean(phiDiff / (1./self.epsOut + (1./self.epsIn - 1./self.epsOut)*maskMean)) / h[dim2]
+				if deriv:
+					#Derivative contribution in D due to first-order change in epsIn:
+					integrand = phiDiff * maskMean / (1./self.epsOut + (1./self.epsIn - 1./self.epsOut)*maskMean)**2
+					epsEff_epsIn[dim1,dim2] = np.mean(integrand) / (h[dim2] * epsIn**2)
+					Lphi_in -= (integrand - np.roll(integrand, +1, axis=dim2)) * (1./(h[dim2]*epsIn)**2)
+					integrand = None
+					#Derivative contribution in D due to first-order change in epsout:
+					integrand = phiDiff * (1.-maskMean) / (1./self.epsOut + (1./self.epsIn - 1./self.epsOut)*maskMean)**2
+					epsEff_epsOut[dim1,dim2] = np.mean(integrand) / (h[dim2] * epsOut**2)
+					Lphi_out -= (integrand - np.roll(integrand, +1, axis=dim2)) * (1./(h[dim2]*epsOut)**2)
+					integrand = None
+				maskMean = None
 				phiDiff = None
-		return epsEff
+			if deriv:
+				#Compute first-order change in phi due to changes in epsIn:
+				nIter = 0
+				print('\tCG_in: ', end='', flush=True)
+				phi_in,info = cg(self.Lhs, Lphi_in.reshape(-1), tol=1e-6, callback=iterProgress, x0=np.zeros(prodS), M=precondOp, maxiter=100)
+				print('done.', flush=True)
+				phi_in = phi_in.reshape(S)
+				Lphi_in = None
+				#Compute first-order change in phi due to changes in epsOut:
+				nIter = 0
+				print('\tCG_out: ', end='', flush=True)
+				phi_out,info = cg(self.Lhs, Lphi_out.reshape(-1), tol=1e-6, callback=iterProgress, x0=np.zeros(prodS), M=precondOp, maxiter=100)
+				print('done.', flush=True)
+				phi_out = phi_out.reshape(S)
+				Lphi_out = None
+				#Compute derivative contributions in D due to first-order changes in phi:
+				for dim2 in range(3):
+					epsAvg = 1. / (1./self.epsOut + (0.5*(1./self.epsIn - 1./self.epsOut))*(self.mask + np.roll(self.mask, -1, axis=dim2)))
+					epsEff_epsIn[dim1,dim2] += np.mean((phi_in - np.roll(phi_in, -1, axis=dim2)) * epsAvg) / h[dim2]
+					epsEff_epsOut[dim1,dim2] += np.mean((phi_out - np.roll(phi_out, -1, axis=dim2)) * epsAvg) / h[dim2]
+		if deriv:
+			return epsEff, epsEff_epsIn, epsEff_epsOut
+		else:
+			return epsEff
 
 
 #---------- Test code ----------
@@ -164,28 +220,34 @@ if __name__ == "__main__":
 	L = np.array([10.,10.,20.])
 	S = np.array([100, 100, 200])
 	
-	#Create mask containing a single sphere:
+	#Create mask containing a few spheres:
 	from scipy.special import erfc
-	r0 = np.array([0.,5.,9.]); R = 3.5
+	r0 = np.array([[0.,5.,8.],[5.,1.,4.]]); R = 3.5
 	grids1D = tuple([ np.arange(Si, dtype=float)*(L[i]/Si) for i,Si in enumerate(S) ])
-	dr = np.array(np.meshgrid(*grids1D, indexing='ij')) - r0[:,None,None,None] #displacements from center of sphere
-	Lbcast = np.array(L)[:,None,None,None]
+	dr = np.array(np.meshgrid(*grids1D, indexing='ij'))[None,...] - r0[:,:,None,None,None] #displacements from center of sphere
+	Lbcast = np.array(L)[None,:,None,None,None]
 	dr -= np.floor(0.5+dr/Lbcast)*Lbcast #wrap displacements by minimum image convention
-	mask = 0.5*erfc(np.linalg.norm(dr, axis=0) - R) #1-voxel smoothing
+	mask = 0.5*erfc(np.linalg.norm(dr, axis=1).min(axis=0) - R) #1-voxel smoothing
 
 	#Calculate potential with FD:
-	epsIn = 3.0
+	epsIn = 7.0
 	epsOut = 2.0
 	print('Computing potential:')
 	PeriodicFD(L, mask, epsIn, epsOut, [False,False,True]).solve([0,0,1.], False)
 	
 	#Calculate dielectric constant:
-	epsEff = PeriodicFD(L, mask, epsIn, epsOut).computeEps()
+	epsEff, epsEff_in, epsEff_out = PeriodicFD(L, mask, epsIn, epsOut).computeEps(deriv=True)
 	print('Dielectric tensor:\n', epsEff)
 	print('epsAvg:', np.trace(epsEff)/3)
 	
 	#Print Clausius-Mossoti estimate:
-	CMterm = (4*np.pi*(R**3)/(3.*np.prod(L)*epsOut)) * epsOut*(epsIn-epsOut)/(epsIn+2.*epsOut)
+	CMterm = r0.shape[0] * (4*np.pi*(R**3)/(3.*np.prod(L)*epsOut)) * epsOut*(epsIn-epsOut)/(epsIn+2.*epsOut)
 	epsCM = epsOut*(1.+CMterm)/(1.-2*CMterm)
 	print('epsCM:', epsCM)
 	
+	#Finite difference derivatives of dielectric tensor:
+	deps = 0.01
+	epsEff_epsIn = (0.5/deps) * (PeriodicFD(L, mask, epsIn+deps, epsOut).computeEps() - PeriodicFD(L, mask, epsIn-deps, epsOut).computeEps())
+	epsEff_epsOut = (0.5/deps) * (PeriodicFD(L, mask, epsIn, epsOut+deps).computeEps() - PeriodicFD(L, mask, epsIn, epsOut-deps).computeEps())
+	print('\n--- d(eps)/d(epsIn) ---\nNumeric:\n', epsEff_epsIn, '\nAnalytic:\n', epsEff_in)
+	print('\n--- d(eps)/d(epsOut) ---\nNumeric:\n', epsEff_epsOut, '\nAnalytic:\n', epsEff_out)
