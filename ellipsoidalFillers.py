@@ -14,7 +14,8 @@ aspectRatio = float(matFile['Aspect_Ratio'])
 centers = np.array(matFile['Center_list']) - 1. #Octave to python convention
 axisDir = np.array(matFile['Orientation_list'])
 volFrac = float(matFile['VF'])
-L = np.array(matFile['Side_length']).flatten()
+L = np.array(matFile['Side_length'], dtype=float).flatten()
+hTarget = 1. #grid spacing
 a = float(matFile['semi_major_axis_length'])
 b = a/aspectRatio
 axisDir = axisDir * (1./np.linalg.norm(axisDir,axis=1)[:,None]) #normalize
@@ -22,12 +23,14 @@ matFile = None
 
 #Construct mask (1 inside particles, 0 outside):
 def constructMask():
-	mask = np.zeros(L)
+	S = np.round(L/hTarget).astype(int)
+	grids1D = [ np.arange(Si)*(L[i]/Si) for i,Si in enumerate(S) ]
+	mask = np.zeros(S)
 	#Split into loop over first direction to save memory:
-	for i0 in range(L[0]):
-		grids1D = tuple([np.arange(i0,i0+1)] + [ np.arange(Li, dtype=float) for Li in L[1:] ])
-		dr = np.array(np.meshgrid(*grids1D, indexing='ij'))[None,...] - centers[...,None,None,None] #vectors from each center to each grid point
-		Lbcast = np.array(L)[None,:,None,None,None]
+	for i0 in range(S[0]):
+		dr = ( np.array(np.meshgrid(grids1D[0][i0:i0+1], grids1D[1], grids1D[2], indexing='ij'))[None,...]
+			- centers[...,None,None,None] ) #vectors from each center to each grid point
+		Lbcast = L[None,:,None,None,None]
 		dr -= np.floor(0.5+dr/Lbcast)*Lbcast #wrap displacements by minimum image convention
 		dist = np.maximum(np.sqrt(np.sum(dr**2, axis=1)), 1e-6) #corresponding length (regularized to avoide division by zero below) 
 		cosTheta = np.sum(dr * axisDir[...,None,None,None], axis=1) / dist #corresponding cosTheta's to major axis direction
@@ -41,7 +44,7 @@ printDuration('MaskDone')
 #Initialize carrier hopping parameters:
 params = { 
     "L": np.array(L), #box size in nm
-    "h": 1., #grid spacing in nm
+    "h": hTarget, #grid spacing in nm
     "Efield": 0.06, #electric field in V/nm
     "dosSigma": 0.224, #dos standard deviation in eV
     "dosMu": 0.0, #dos center in eV

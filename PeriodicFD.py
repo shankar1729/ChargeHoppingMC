@@ -19,6 +19,7 @@ class PeriodicFD:
 		"""
 		#Check inputs:
 		assert L.shape == (3,)
+		assert L.dtype == float
 		assert len(mask.shape) == 3
 		S = np.array(mask.shape, dtype=int)
 		Omega = np.prod(L) #unit cell volume
