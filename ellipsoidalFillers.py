@@ -27,6 +27,7 @@ def constructMask():
 	grids1D = [ np.arange(Si)*(L[i]/Si) for i,Si in enumerate(S) ]
 	mask = np.zeros(S)
 	#Split into loop over first direction to save memory:
+	print('Creating mask in', S[0], 'slices:', end=' ', flush=True)
 	for i0 in range(S[0]):
 		dr = ( np.array(np.meshgrid(grids1D[0][i0:i0+1], grids1D[1], grids1D[2], indexing='ij'))[None,...]
 			- centers[...,None,None,None] ) #vectors from each center to each grid point
@@ -36,6 +37,8 @@ def constructMask():
 		cosTheta = np.sum(dr * axisDir[...,None,None,None], axis=1) / dist #corresponding cosTheta's to major axis direction
 		dist -= b/np.sqrt(1 + ((b/a)**2 - 1)*(cosTheta**2)) #distance outside surface of ellipsoid
 		mask[i0:i0+1] = 0.5*erfc(dist.min(axis=0)) #1-voxel smoothing
+		print(i0+1, end=' ', flush=True)
+	print('done.\n')
 	return mask
 mask = constructMask()
 print('Volume fraction: expected:', volFrac, 'actual:', mask.mean())
