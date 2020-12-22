@@ -66,13 +66,13 @@ params = {
     "shouldPlotNP": False, #plot the electrostatic potential from PeriodicFD
 }
 
-
 #Run hopping simulation:
 nRuns = 32
 np.random.seed(0)
 model = CarrierHoppingMC(params)
 trajectory = np.concatenate(parallelMap(model.run, cpu_count(), range(nRuns))) #Run in parallel and merge trajectories
 np.savetxt("trajectory.dat.gz", trajectory, fmt="%d %e %d %d %d", header="iElectron t[s] ix iy iz") #Save trajectories together
+printDuration('HoppingDone')
 
 #Extract mobility:
 print(trajectory.shape)
@@ -89,11 +89,20 @@ muErr = mu.std() / np.sqrt(nElectrons) #standard error in average mobility
 print('Mobility:', muMean, '+/-', muErr)
 
 #Compute dielectric function:
-epsEff = PeriodicFD(np.array(L), mask, params['epsNP'], params['epsBG']).computeEps()
+epsEff, epsEff_NP, epsEff_BG = PeriodicFD(np.array(L), mask, params['epsNP'], params['epsBG']).computeEps(deriv=True)
 epsAvg = np.trace(epsEff)/3
+epsAvg_NP = np.trace(epsEff_NP)/3
+epsAvg_BG = np.trace(epsEff_BG)/3
 print('epsAvg:', epsAvg)
+print('d(epsAvg)/d(epsFiller):', epsAvg_NP)
+print('d(epsAvg)/d(epsMatrix):', epsAvg_BG)
 print('epsTensor:\n', epsEff)
+print('d(epsTensor)/d(epsFiller):\n', epsEff_NP)
+print('d(epsTensor)/d(epsMatrix):\n', epsEff_BG)
+printDuration('DielDone')
 
 #Write results file:
-results = np.concatenate(([ muMean, muErr, epsAvg], epsEff.flatten()))[None,:]
+def unpack(mat):
+	return [ mat[0,0], mat[1,1], mat[2,2], mat[1,2], mat[2,0], mat[0,1] ]
+results = np.concatenate(([ muMean, muErr, epsAvg, epsAvg_NP, epsAvg_BG], unpack(epsEff), unpack(epsEff_NP), unpack(epsEff_BG)))[None,:]
 np.savetxt('results.csv', results, delimiter=',',fmt='%g')

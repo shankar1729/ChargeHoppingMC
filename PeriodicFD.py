@@ -178,13 +178,13 @@ class PeriodicFD:
 				if deriv:
 					#Derivative contribution in D due to first-order change in epsIn:
 					integrand = phiDiff * maskMean / (1./self.epsOut + (1./self.epsIn - 1./self.epsOut)*maskMean)**2
-					epsEff_epsIn[dim1,dim2] = np.mean(integrand) / (h[dim2] * epsIn**2)
-					Lphi_in -= (integrand - np.roll(integrand, +1, axis=dim2)) * (1./(h[dim2]*epsIn)**2)
+					epsEff_epsIn[dim1,dim2] = np.mean(integrand) / (h[dim2] * self.epsIn**2)
+					Lphi_in -= (integrand - np.roll(integrand, +1, axis=dim2)) * (1./(h[dim2]*self.epsIn)**2)
 					integrand = None
 					#Derivative contribution in D due to first-order change in epsout:
 					integrand = phiDiff * (1.-maskMean) / (1./self.epsOut + (1./self.epsIn - 1./self.epsOut)*maskMean)**2
-					epsEff_epsOut[dim1,dim2] = np.mean(integrand) / (h[dim2] * epsOut**2)
-					Lphi_out -= (integrand - np.roll(integrand, +1, axis=dim2)) * (1./(h[dim2]*epsOut)**2)
+					epsEff_epsOut[dim1,dim2] = np.mean(integrand) / (h[dim2] * self.epsOut**2)
+					Lphi_out -= (integrand - np.roll(integrand, +1, axis=dim2)) * (1./(h[dim2]*self.epsOut)**2)
 					integrand = None
 				maskMean = None
 				phiDiff = None
