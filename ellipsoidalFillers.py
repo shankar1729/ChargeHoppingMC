@@ -7,6 +7,17 @@ from scipy.special import erfc
 from CarrierHoppingMC import CarrierHoppingMC
 from PeriodicFD import PeriodicFD
 from common import *
+import sys
+
+if len(sys.argv)>1:
+	suffix = sys.argv[1]
+	if suffix != 'SwapXZ':
+		print('If specified, argument must be "SwapXZ" and x and z axis will be swapped.')
+		exit(1)
+	swapXZ = True
+else:
+	suffix = ''
+	swapXZ = False
 
 #Extract information from matlab file:
 matFile = loadmat('structure.mat')
@@ -20,6 +31,11 @@ a = float(matFile['semi_major_axis_length'])
 b = a/aspectRatio
 axisDir = axisDir * (1./np.linalg.norm(axisDir,axis=1)[:,None]) #normalize
 matFile = None
+
+#Apply x <-> z swap if required:
+if swapXZ:
+	centers = centers[:,::-1]
+	axisDir = axisDir[:,::-1]
 
 #Construct mask (1 inside particles, 0 outside):
 def constructMask():
@@ -71,7 +87,7 @@ nRuns = 32
 np.random.seed(0)
 model = CarrierHoppingMC(params)
 trajectory = np.concatenate(parallelMap(model.run, cpu_count(), range(nRuns))) #Run in parallel and merge trajectories
-np.savetxt("trajectory.dat.gz", trajectory, fmt="%d %e %d %d %d", header="iElectron t[s] ix iy iz") #Save trajectories together
+np.savetxt("trajectory"+suffix+".dat.gz", trajectory, fmt="%d %e %d %d %d", header="iElectron t[s] ix iy iz") #Save trajectories together
 printDuration('HoppingDone')
 
 #Extract mobility:
@@ -87,6 +103,12 @@ mu = v / (params["Efield"]*1e9) # mobility [m^2/(V.s)] for each electron
 muMean = mu.mean() #average moibility
 muErr = mu.std() / np.sqrt(nElectrons) #standard error in average mobility
 print('Mobility:', muMean, '+/-', muErr)
+
+#Bypass dielectric calculation in x <-> z swap case (as results will be redundant with unswapped case):
+if swapXZ:
+	results = np.array([[muMean, muErr]])
+	np.savetxt('results'+suffix+'.csv', results, delimiter=',', fmt='%g')
+	exit(0)
 
 #Compute dielectric function:
 epsEff, epsEff_NP, epsEff_BG = PeriodicFD(np.array(L), mask, params['epsNP'], params['epsBG']).computeEps(deriv=True)
@@ -105,4 +127,4 @@ printDuration('DielDone')
 def unpack(mat):
 	return [ mat[0,0], mat[1,1], mat[2,2], mat[1,2], mat[2,0], mat[0,1] ]
 results = np.concatenate(([ muMean, muErr, epsAvg, epsAvg_NP, epsAvg_BG], unpack(epsEff), unpack(epsEff_NP), unpack(epsEff_BG)))[None,:]
-np.savetxt('results.csv', results, delimiter=',',fmt='%g')
+np.savetxt('results'+suffix+'.csv', results, delimiter=',', fmt='%g')
