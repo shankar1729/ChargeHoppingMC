@@ -28,13 +28,15 @@ def ellipse_normal_point(a, b, x, y, n_iter=10):
 	C = b**2 - a**2
 	theta = np.full(x.shape, 0.25*np.pi)
 	fp_sq = 1E-9 ** 2  # floor on (df/dtheta)^2 for safe step
+	print('Normal solve (MAE):', end=' ', flush=True)
 	for i_iter in range(n_iter):
 		c, s = np.cos(theta), np.sin(theta)
 		f = A*s + B*c + C*s*c
-		print(f"{i_iter}: {abs(f).mean()} {abs(f).max()}")
 		f_prime = A*c - B*s + C*(c*c - s*s)  # df/dtheta
 		theta -= f * f_prime/(f_prime**2 + fp_sq)   # Safe Newton-Raphson update
 		theta = np.clip(theta, 0., 0.5*np.pi)  # keep in first quadrant
+		print(f"{abs(f).mean():.0e}", end= ' ', flush=True)
+	print('done.', flush=True)
 	return theta
 
 
@@ -42,7 +44,7 @@ def ellipse_normal_point(a, b, x, y, n_iter=10):
 if __name__ == "__main__":
 	import matplotlib.pyplot as plt
 
-	x, y = np.meshgrid(np.linspace(-9, 9, 901), np.linspace(-2, 2, 201))
+	x, y = np.meshgrid(np.linspace(-9, 9, 9001), np.linspace(-2, 2, 2001))
 	a, b = 8., 1.
 	n = ellipse_normal_coordinate(a, b, x, y)
 	n_mag = 1.
