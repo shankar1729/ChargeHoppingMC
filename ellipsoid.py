@@ -1,4 +1,40 @@
 import numpy as np
+from scipy.interpolate import RectBivariateSpline
+
+
+class Ellipsoid:
+	"""Efficient calculator of point-ellipsoid distance with caching."""
+	
+	def __init__(self, a, b, n_max):
+		"""
+		Setup to calculate normal distances of points up to
+		n_max away from an ellipsoid with semi-axes a and b.
+		"""
+		self.a = a
+		self.b = b
+		self.n_max = n_max
+		n_points_max = 200  # max. resolution of cache in any direction
+		dr = (max(a, b) + n_max) / n_points_max
+		x = np.linspace(0., a + n_max, 1 + int(np.ceil((a + n_max) / dr)))
+		y = np.linspace(0., b + n_max, 1 + int(np.ceil((b + n_max) / dr)))
+		x_mesh, y_mesh = np.meshgrid(x, y, indexing='ij')
+		n = ellipse_normal_coordinate(a, b, x_mesh, y_mesh, n_iter=20)
+		self.n = RectBivariateSpline(x, y, n, kx=1, ky=1)  # linear interpolator
+		
+	def normal_coordinate(self, rho, z):
+		"""
+		Return indices of points (rho, z) in cylindrical coordinates,
+		where z is along the ellipsoid a-axis, which are within n_max of the
+		ellipsoid, along with the normal distances of only those points.
+		"""
+		# Select by bounding box first:
+		sel = np.where(np.logical_and(
+			z <= self.a + self.n_max, rho <= self.b + self.n_max,
+		))
+		n = self.n.ev(z[sel], rho[sel])  # interpolate from cache
+		# Refine selection from computed coordinate:
+		sel_n = np.where(n <= self.n_max)
+		return tuple(sel_dim[sel_n] for sel_dim in sel), n[sel_n]
 
 
 def ellipse_normal_coordinate(a, b, x, y, n_iter=10):
@@ -43,14 +79,17 @@ def ellipse_normal_point(a, b, x, y, n_iter=10):
 #---------- Test code ----------
 if __name__ == "__main__":
 	import matplotlib.pyplot as plt
-
-	x, y = np.meshgrid(np.linspace(-9, 9, 9001), np.linspace(-2, 2, 2001))
-	a, b = 8., 1.
-	n = ellipse_normal_coordinate(a, b, x, y)
-	n_mag = 1.
+	ellipsoid = Ellipsoid(a=8., b=1., n_max=1.)
+	z, rho = np.meshgrid(np.linspace(0, 10, 10001), np.linspace(0, 3, 3001))
+	n = np.full(z.shape, ellipsoid.n_max)
+	sel, n_sel = ellipsoid.normal_coordinate(rho, z)
+	n[sel] = n_sel
+	n_mag = 1.5
 	plt.imshow(
-		n, extent=(x.min(), x.max(), y.min(), y.max()), origin='lower',
+		n, extent=(z.min(), z.max(), rho.min(), rho.max()), origin='lower',
 		cmap='RdBu', vmin=-n_mag, vmax=+n_mag,
 	)
+	plt.xlabel("$z$")
+	plt.ylabel(r"$\rho$")
 	plt.colorbar()
 	plt.show()
