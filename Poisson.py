@@ -2,7 +2,7 @@
 import numpy as np
 from pyfftw.interfaces import numpy_fft as np_fft
 from scipy.sparse import csr_matrix
-from scipy.sparse.linalg import LinearOperator, cg
+from scipy.sparse.linalg import LinearOperator, cg, lgmres
 from multiprocessing import cpu_count
 import pyfftw; pyfftw.config.NUM_THREADS = cpu_count()
 
@@ -22,8 +22,6 @@ class Poisson:
 		assert len(epsInv.shape) == 3
 		S = np.array(epsInv.shape, dtype=int)
 		Omega = np.prod(L) #unit cell volume
-		assert isinstance(epsIn, float)
-		assert isinstance(epsOut, float)
 		#Remember inputs:
 		self.L = L
 		self.epsInv = epsInv
@@ -42,7 +40,10 @@ class Poisson:
 			return invGsq
 		self.invGsq = getPrecond()
 		#Construct matrix for div(eps grad()):
-		data = np.zeros((prodS, 7)) #non-zero entries of Poisson operator (diagonal, followed by off diagonals)
+		data = np.zeros(
+			(prodS, 7),
+			dtype=self.epsInv.dtype,  #complex/real matrix depending on epsInv
+		) #non-zero entries of Poisson operator (diagonal, followed by off diagonals)
 		indices = np.tile(np.arange(prodS)[:,None], (1,7)) #corresponding column indices
 		stride = np.array([S[1]*S[2], S[2], 1], dtype=int)
 		iEdge = 0
@@ -90,11 +91,12 @@ class Poisson:
 		Returns potential (same dimensions as self.epsInv).
 		"""
 		assert len(E) == 3
+
 		#Create rhs and initial guess:
 		S = np.array(self.epsInv.shape)
 		prodS = S.prod()
-		rhs = np.zeros(prodS)
-		phi = np.zeros(prodS)
+		rhs = np.zeros(prodS, dtype=self.epsInv.dtype)
+		phi = np.zeros(prodS, dtype=self.epsInv.dtype)
 		for dim,Edim in enumerate(E):
 			if Edim != 0.:
 				fieldProfile = np.arange(S[dim]) * (-Edim * self.L[dim] / S[dim])
@@ -104,10 +106,20 @@ class Poisson:
 				rhs[self.rhsSel[dim]] += Edim * self.rhsVal[dim]
 		if not np.any(self.dirichletBC):
 			phi -= phi.mean()
+
 		#Create preconditioner:
 		def precondFunc(x):
 			return np.real(np_fft.ifftn(self.invGsq * np_fft.fftn(np.reshape(x,S))).flatten())
 		precondOp = LinearOperator((prodS,prodS), precondFunc)
+
+		#Select solver:
+		if self.epsInv.dtype == np.complex128:
+			solver = lgmres
+			solver_name = "LGMRES"
+		else:
+			solver = cg
+			solver_name = "CG"
+
 		#Solve matrix equations:
 		global nIter
 		nIter = 0
@@ -115,11 +127,12 @@ class Poisson:
 			global nIter
 			nIter += 1
 			print(nIter, end=' ', flush=True)
-		print('\tCG: ', end='', flush=True)
-		phi,info = cg(self.Lhs, rhs, tol=1e-6, callback=iterProgress, x0=phi, M=precondOp, maxiter=100)
+		print(f'\t{solver_name}: ', end='', flush=True)
+		phi,info = solver(self.Lhs, rhs, tol=1e-6, callback=iterProgress, x0=phi, M=precondOp, maxiter=100)
 		print('done.', flush=True)
 		phi = np.reshape(phi,S)
 		rhs = None
+
 		#Optional plot:
 		if shouldPlot:
 			import matplotlib.pyplot as plt
@@ -136,7 +149,7 @@ class Poisson:
 		"""
 		assert (not np.any(self.dirichletBC)) #all directions must be periodic
 		print('Computing dielectric tensor:')
-		epsEff = np.zeros((3,3))
+		epsEff = np.zeros((3, 3), dtype=self.epsInv.dtype)
 		S = np.array(self.epsInv.shape)
 		prodS = S.prod()
 		h = self.L / S
@@ -176,8 +189,8 @@ if __name__ == "__main__":
 	mask = 0.5*erfc(np.linalg.norm(dr, axis=1).min(axis=0) - R) #1-voxel smoothing
 	
 	#Convert to dielectric profile:
-	epsIn = 7.0
-	epsOut = 2.0
+	epsIn = 7.0+0.3j
+	epsOut = 2.0+0.1j
 	epsInv = 1./epsOut + (1./epsIn - 1./epsOut) * mask
 
 	#Calculate potential with FD:
