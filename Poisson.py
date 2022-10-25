@@ -6,28 +6,28 @@ from scipy.sparse.linalg import LinearOperator, cg
 from multiprocessing import cpu_count
 import pyfftw; pyfftw.config.NUM_THREADS = cpu_count()
 
-class PeriodicFD:
-	"""Poisson solver using finite-difference discretization."""
+#Poisson solver using finite-difference discretization:
+class Poisson:
 	
-	def __init__(self, L, mask, epsIn, epsOut):
+	def __init__(self, L, epsInv, dirichletBC=[False,False,False]):
 		"""
 		Set up Poisson solver in a box of size L (dimensions [3,])
-		with grid geometry specified by mask (3D scalar field).
-		The dielectric function is epsIn where mask=1 and epsOut where mask=0.
+		with inverse dielectric profile epsInv (3D scalar field).
+		The boundary conditions in each direction are Dirichlet if corresponding
+		entry of dirichletBC is True, and periodic otherwise (default).
 		"""
 		#Check inputs:
 		assert L.shape == (3,)
 		assert L.dtype == float
-		assert len(mask.shape) == 3
-		S = np.array(mask.shape, dtype=int)
+		assert len(epsInv.shape) == 3
+		S = np.array(epsInv.shape, dtype=int)
 		Omega = np.prod(L) #unit cell volume
 		assert isinstance(epsIn, float)
 		assert isinstance(epsOut, float)
 		#Remember inputs:
 		self.L = L
-		self.mask = mask
-		self.epsIn = epsIn
-		self.epsOut = epsOut
+		self.epsInv = epsInv
+		self.dirichletBC = dirichletBC
 		#Construct preconditioner:
 		prodS = S.prod()
 		h = L / S
@@ -37,7 +37,8 @@ class PeriodicFD:
 			Gsq = np.sum((iG * (2*np.pi/L[None,:]))**2, axis=-1); iG = None
 			Gsq[0] = np.min(Gsq[1:])
 			invGsq = np.reshape(1./Gsq, S)
-			invGsq[0, 0, 0] = 0.  # periodic G=0 projection
+			if not np.any(dirichletBC):
+				invGsq[0,0,0] = 0. #periodic G=0 projection
 			return invGsq
 		self.invGsq = getPrecond()
 		#Construct matrix for div(eps grad()):
@@ -59,7 +60,7 @@ class PeriodicFD:
 				#Set corresponding column indices:
 				indices[:,iEdge] += np.tile(neighOffset.reshape(shape), tile).reshape(-1) * stride[dim]
 				#Set corresponding off-diagonal matrix element (average 1/epsilon on edge):
-				data[:,iEdge] = -1./((h[dim]**2) * (1./epsOut + ((1./epsIn - 1./epsOut)*0.5)*(mask.reshape(-1) + mask.reshape(-1)[indices[:,iEdge]])))
+				data[:,iEdge] = -1./(((h[dim]**2) * 0.5) * (epsInv.reshape(-1) + epsInv.reshape(-1)[indices[:,iEdge]]))
 		data[:,0] = -data.sum(axis=1) #set diagonal matrix elements:
 		#--- Fix wrap-around terms, constructing rhs term:
 		self.rhsSel = [[],[],[]] #Indices into sparse RHS term, per field direction
@@ -70,7 +71,11 @@ class PeriodicFD:
 				iEdge += 1
 				sel = np.where((indices[:,iEdge]-indices[:,0])*pm < 0)[0]
 				self.rhsSel[dim].append(sel)
-				self.rhsVal[dim].append(-data[sel,iEdge] * (-L[dim]*pm)) #potential difference between ends
+				if dirichletBC[dim]:
+					self.rhsVal[dim].append(-data[sel,iEdge] * (-(L[dim] if pm>0 else -h[dim]))) #set phi in adjacent off-grid point
+					data[sel,iEdge] = 0.
+				else:
+					self.rhsVal[dim].append(-data[sel,iEdge] * (-L[dim]*pm)) #potential difference between ends
 			self.rhsSel[dim] = np.concatenate(self.rhsSel[dim])
 			self.rhsVal[dim] = np.concatenate(self.rhsVal[dim])
 		self.Lhs = csr_matrix((data.reshape(-1), indices.reshape(-1), range(0,7*prodS+1,7)), shape=(prodS, prodS))
@@ -82,11 +87,11 @@ class PeriodicFD:
 		"""
 		Compute potential due to an electric field E (dimensions [3,])
 		Optionally, if shouldPlot=True, plot slices of the potential for debugging
-		Returns potential (same dimensions as self.mask).
+		Returns potential (same dimensions as self.epsInv).
 		"""
 		assert len(E) == 3
 		#Create rhs and initial guess:
-		S = np.array(self.mask.shape)
+		S = np.array(self.epsInv.shape)
 		prodS = S.prod()
 		rhs = np.zeros(prodS)
 		phi = np.zeros(prodS)
@@ -97,7 +102,8 @@ class PeriodicFD:
 				tile = np.copy(S); tile[dim] = 1
 				phi += np.tile(fieldProfile.reshape(shape), tile).reshape(-1)
 				rhs[self.rhsSel[dim]] += Edim * self.rhsVal[dim]
-		phi -= phi.mean()
+		if not np.any(self.dirichletBC):
+			phi -= phi.mean()
 		#Create preconditioner:
 		def precondFunc(x):
 			return np.real(np_fft.ifftn(self.invGsq * np_fft.fftn(np.reshape(x,S))).flatten())
@@ -125,10 +131,13 @@ class PeriodicFD:
 		return phi
 
 	def computeEps(self):
-		"""Compute dielectric tensor."""
+		"""
+		Compute dielectric tensor (must have dirichletBC = False in all directions).
+		"""
+		assert (not np.any(self.dirichletBC)) #all directions must be periodic
 		print('Computing dielectric tensor:')
 		epsEff = np.zeros((3,3))
-		S = np.array(self.mask.shape)
+		S = np.array(self.epsInv.shape)
 		prodS = S.prod()
 		h = self.L / S
 		
@@ -144,9 +153,9 @@ class PeriodicFD:
 					slc = [slice(None)] * 3
 					slc[dim1] = -1
 					phiDiff[tuple(slc)] += self.L[dim2]
-				maskMean = 0.5*(self.mask + np.roll(self.mask, -1, axis=dim2)) #mean of mask along edge endpoints
-				epsEff[dim1, dim2] = np.mean(phiDiff / (1./self.epsOut + (1./self.epsIn - 1./self.epsOut)*maskMean)) / h[dim2]
-				maskMean = None
+				epsInvMean = 0.5*(self.epsInv + np.roll(self.epsInv, -1, axis=dim2)) #mean of epsInv along edge endpoints
+				epsEff[dim1,dim2] = np.mean(phiDiff / epsInvMean) / h[dim2]
+				epsInvMean = None
 				phiDiff = None
 		return epsEff
 
@@ -165,15 +174,26 @@ if __name__ == "__main__":
 	Lbcast = np.array(L)[None,:,None,None,None]
 	dr -= np.floor(0.5+dr/Lbcast)*Lbcast #wrap displacements by minimum image convention
 	mask = 0.5*erfc(np.linalg.norm(dr, axis=1).min(axis=0) - R) #1-voxel smoothing
-
-	#Calculate dielectric constant:
+	
+	#Convert to dielectric profile:
 	epsIn = 7.0
 	epsOut = 2.0
-	epsEff = PeriodicFD(L, mask, epsIn, epsOut).computeEps()
+	epsInv = 1./epsOut + (1./epsIn - 1./epsOut) * mask
+
+	#Calculate potential with FD:
+	print('Computing potential:')
+	Poisson(L, epsInv, [False,False,True]).solve([0, 0, 1.], False)
+	
+	#Calculate dielectric constant:
+	epsEff = Poisson(L, epsInv).computeEps()
 	print('Dielectric tensor:\n', epsEff)
 	print('epsAvg:', np.trace(epsEff)/3)
 	
 	#Print Clausius-Mossoti estimate:
-	CMterm = r0.shape[0] * (4*np.pi*(R**3)/(3.*np.prod(L)*epsOut)) * epsOut*(epsIn-epsOut)/(epsIn+2.*epsOut)
-	epsCM = epsOut*(1.+CMterm)/(1.-2*CMterm)
+	CMterm = (
+		r0.shape[0]
+		* (4*np.pi * (R**3) / (3. * np.prod(L) * epsOut))
+		* epsOut * (epsIn - epsOut) / (epsIn + 2.*epsOut)
+	)
+	epsCM = epsOut * (1. + CMterm) / (1. - 2*CMterm)
 	print('epsCM:', epsCM)
