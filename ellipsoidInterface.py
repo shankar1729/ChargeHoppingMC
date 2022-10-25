@@ -52,7 +52,7 @@ class EllipsoidInterfaceCalculation:
 			mat['interface_thickness'], dtype=float
 		).flatten()
 		self.n_layers = len(self.interface_thickness) + 2
-		self.epsilon = np.array(mat['epsilon'], dtype=float)
+		self.epsilon = np.array(mat['epsilon'])
 		assert self.epsilon.shape[1] == self.n_layers
 		
 		# Enforce constraints on data:
@@ -131,7 +131,7 @@ class EllipsoidInterfaceCalculation:
 		n_grid = np.arange(
 			-min(self.a, self.b) - 4*sigma, self.n_max + 4*sigma + dn, dn
 		)
-		prop_grid = np.full(n_grid.shape, prop[0], dtype=float)  # filler
+		prop_grid = np.full(n_grid.shape, prop[0])  # filler
 		n_cut = 0.
 		for thickness, prop_layer in zip(self.interface_thickness, prop[1:-1]):
 			prop_grid[n_grid >= n_cut] = prop_layer  # interface layers
@@ -143,7 +143,7 @@ class EllipsoidInterfaceCalculation:
 
 	def visualize_geometry(self, filename):
 		"""Output visualization of geometry to filename."""
-		mask = self.map_property(self.n, np.arange(self.n_layers))
+		mask = self.map_property(self.n, np.arange(self.n_layers, dtype=float))
 		n_panels = 4
 		fig, axes = plt.subplots(
 			n_panels, n_panels, sharex=True, sharey=True,
