@@ -1,14 +1,39 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter1d
-from scipy.io import loadmat
+from scipy.io import loadmat, savemat
 from ellipsoid import Ellipsoid
-from common import printDuration
+from Poisson import Poisson
 
 
 def main():
 	calc = EllipsoidInterfaceCalculation("structure.mat")
 	calc.visualize_geometry("structure.png")
+	
+	# Calculate and report dielectric tensor for each frequency:
+	epsilon_arr = []
+	for epsilon in calc.epsilon:
+		print(f'\nCalculating for material epsilons = {epsilon}:')
+		epsilon_eff = calc.get_epsilon_eff(epsilon)
+		epsilon_arr.append([
+			np.trace(epsilon_eff)/3,  # Avg
+			epsilon_eff[0, 0], # XX
+			epsilon_eff[1, 1], # YY
+			epsilon_eff[2, 2], # ZZ
+			epsilon_eff[1, 2], # YZ
+			epsilon_eff[2, 0], # ZX
+			epsilon_eff[0, 1], # XY
+		])
+		print(f'Effective epsilon:\n{epsilon_eff}')
+
+	# Additionally save results in matlab format:
+	savemat(
+		"epsilon.mat",
+		{
+			"epsilon": epsilon_arr,
+			"column_names": ["Avg", "XX", "YY", "ZZ", "YZ", "ZX", "XY"],
+		}
+	)
 
 
 class EllipsoidInterfaceCalculation:
@@ -38,9 +63,11 @@ class EllipsoidInterfaceCalculation:
 		self.h = self.L / self.S  # updated to be commensurate with L
 		self.h_avg = np.prod(self.h) ** (1./3)  # average spacing
 		
-		# Create geometry evaluator
+		# Compute normal distances for simulation mesh
 		self.n_max = self.interface_thickness.sum() + 4 * self.h_avg
 		self.ellipsoid = Ellipsoid(self.a, self.b, self.n_max)
+		r1d = tuple(np.arange(Si)*hi for Si, hi in zip(self.S, self.h))
+		self.n = self.get_normal_distance(r1d)
 
 	def get_normal_distance(self, r1d):
 		"""
@@ -89,7 +116,7 @@ class EllipsoidInterfaceCalculation:
 			if (i_particle + 1) % particle_interval == 0:
 				progress_pct = (i_particle + 1) * 100.0 / len(self.centers)
 				print(f'{progress_pct:.0f}%', end=' ', flush=True)
-		print('done.\n')
+		print('done.')
 		return n
 	
 	def map_property(self, n, prop):
@@ -116,10 +143,7 @@ class EllipsoidInterfaceCalculation:
 
 	def visualize_geometry(self, filename):
 		"""Output visualization of geometry to filename."""
-		r1d = tuple(np.arange(Si)*hi for Si, hi in zip(self.S, self.h))
-		mask = self.map_property(
-			self.get_normal_distance(r1d), np.arange(self.n_layers)
-		)
+		mask = self.map_property(self.n, np.arange(self.n_layers))
 		n_panels = 4
 		fig, axes = plt.subplots(
 			n_panels, n_panels, sharex=True, sharey=True,
@@ -139,6 +163,12 @@ class EllipsoidInterfaceCalculation:
 				ha='center', va='bottom', fontsize="small",
 			)
 		plt.savefig(filename, bbox_inches='tight', dpi=150)
+
+	def get_epsilon_eff(self, epsilon):
+		"""Return effective dielectric tensor for specificied
+		set of dielectric constants of each layer."""
+		epsInv = self.map_property(self.n, 1.0 / epsilon)
+		return Poisson(self.L, epsInv).computeEps()
 
 
 if __name__ == "__main__":

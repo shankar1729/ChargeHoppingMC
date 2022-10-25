@@ -154,7 +154,7 @@ class Poisson:
 		Compute dielectric tensor (must have dirichletBC = False in all directions).
 		"""
 		assert (not np.any(self.dirichletBC)) #all directions must be periodic
-		print('Computing dielectric tensor:')
+		print('\tComputing dielectric tensor:')
 		epsEff = np.zeros((3, 3), dtype=self.epsInv.dtype)
 		S = np.array(self.epsInv.shape)
 		prodS = S.prod()
