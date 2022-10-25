@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter1d
 from scipy.io import loadmat
 from ellipsoid import Ellipsoid
+from common import printDuration
 
 
 def main():
@@ -41,27 +42,49 @@ class EllipsoidInterfaceCalculation:
 		self.n_max = self.interface_thickness.sum() + 4 * self.h_avg
 		self.ellipsoid = Ellipsoid(self.a, self.b, self.n_max)
 
-	def get_normal_distance(self, r):
+	def get_normal_distance(self, r1d):
 		"""
-		Calculate closest normal distance to any particle for positions r
-		(periodic wrapping in final length-3 dimension of r handled).
+		Calculate closest normal distance to any particle for positions
+		specified by the (ij-indexed) meshgrid of 1D arrays x, y and z in r1d.
+		(Periodic boundary conditions applied in the minimum image convention.)
 		Output will be between -min(a, b) and self.n_max.
 		"""
-		n = np.full(r.shape[:-1], self.n_max)
+		r_shape = tuple(len(x) for x in r1d)
+		n = np.full(r_shape, self.n_max)
+		focus_dist = max(self.a, self.b) - self.b
+		bbox_radius = self.b + self.n_max
 		print('Setting normal distance:', end=' ', flush=True)
 		particle_interval = int(np.ceil(0.02 * len(self.centers)))
 		for i_particle, (center, axis) in enumerate(
 			zip(self.centers, self.axes)
 		):
-			# Map r onto cylindrical coordinates about axis of particle:
-			dr = (r - center) / self.L  # separation in fractional coordinates
-			dr -= np.floor(0.5 + dr)  # wrap to [-0.5, 0.5)
-			dr *= self.L  # separation with minimum-image convention wrapping
-			z = abs(dr @ axis)  # axial coordinate in frame of particle
-			rho = np.sqrt(np.linalg.norm(dr, axis=-1)**2 - z**2)  # cyl. coord.
+			r_sq = []
+			z = []
+			bbox_sel = []
+			for i_dir, (xi, center_i, axis_i, Li) in enumerate(
+				zip(r1d, center, axis, self.L)
+			):
+				# Wrap coordinates around center (minimum-image convention):
+				xi = (xi - center_i) / Li  # wrt to center in fractional coords
+				xi -= np.floor(0.5 + xi)  # wrap to [-0.5, 0.5)
+				xi *= Li  # back to Cartesian coordinates
+				# Limit to bounding box:
+				bbox_i = abs(axis_i) * focus_dist + bbox_radius
+				bbox_sel_i = np.where(abs(xi) <= bbox_i)[0]
+				# Put along appropriate dimension for broadcasting:
+				out_shape = [1, 1, 1]
+				out_shape[i_dir] = -1
+				xi = xi[bbox_sel_i].reshape(out_shape)
+				r_sq.append(np.square(xi))
+				z.append(xi * axis_i)  # term in dot-product below
+				bbox_sel.append(bbox_sel_i.reshape(out_shape))
+			z = abs(sum(z))  # broadcasted dot-product r1d @ axis
+			rho = np.sqrt(sum(r_sq) - np.square(z))  # broadcasted sqrt(r^2-z^2)
+			bbox_sel = tuple(bbox_sel)
 			# Compute normal coordinate:
-			sel, n_sel = self.ellipsoid.normal_coordinate(rho, z)
-			n[sel] = np.minimum(n[sel], n_sel)
+			n[bbox_sel] = self.ellipsoid.minimum_normal_coordinate(
+				rho, z, n[bbox_sel]
+			)
 			# Report progress:
 			if (i_particle + 1) % particle_interval == 0:
 				progress_pct = (i_particle + 1) * 100.0 / len(self.centers)
@@ -93,12 +116,9 @@ class EllipsoidInterfaceCalculation:
 
 	def visualize_geometry(self, filename):
 		"""Output visualization of geometry to filename."""
-		grids1D = tuple(np.arange(Si)*hi for Si, hi in zip(self.S, self.h))
-		r = np.array(
-			np.meshgrid(*grids1D, indexing='ij')
-		).transpose((1, 2, 3, 0))  # bring Cartesian direction to end
+		r1d = tuple(np.arange(Si)*hi for Si, hi in zip(self.S, self.h))
 		mask = self.map_property(
-			self.get_normal_distance(r), np.arange(self.n_layers)
+			self.get_normal_distance(r1d), np.arange(self.n_layers)
 		)
 		n_panels = 4
 		fig, axes = plt.subplots(

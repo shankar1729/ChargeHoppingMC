@@ -21,20 +21,21 @@ class Ellipsoid:
 		n = ellipse_normal_coordinate(a, b, x_mesh, y_mesh, n_iter=20)
 		self.n = RectBivariateSpline(x, y, n, kx=1, ky=1)  # linear interpolator
 		
-	def normal_coordinate(self, rho, z):
+	def minimum_normal_coordinate(self, rho, z, n):
 		"""
-		Return indices of points (rho, z) in cylindrical coordinates,
-		where z is along the ellipsoid a-axis, which are within n_max of the
-		ellipsoid, along with the normal distances of only those points.
+		Update n with minimum(n, normal distance) of points (rho, z) in
+		cylindrical coordinates, where z is along the ellipsoid a-axis.
+		Note that points with n >= n_max are not modified.
+		(The dimensions of rho, z and n should match.)
+		Returns the input n (which is modified in place).
 		"""
-		# Select by bounding box first:
+		# Select bounding box:
 		sel = np.where(np.logical_and(
 			z <= self.a + self.n_max, rho <= self.b + self.n_max,
 		))
-		n = self.n.ev(z[sel], rho[sel])  # interpolate from cache
-		# Refine selection from computed coordinate:
-		sel_n = np.where(n <= self.n_max)
-		return tuple(sel_dim[sel_n] for sel_dim in sel), n[sel_n]
+		# Update n:
+		n[sel] = np.minimum(n[sel], self.n.ev(z[sel], rho[sel]))
+		return n
 
 
 def ellipse_normal_coordinate(a, b, x, y, n_iter=10):
@@ -82,8 +83,7 @@ if __name__ == "__main__":
 	ellipsoid = Ellipsoid(a=8., b=1., n_max=1.)
 	z, rho = np.meshgrid(np.linspace(0, 10, 10001), np.linspace(0, 3, 3001))
 	n = np.full(z.shape, ellipsoid.n_max)
-	sel, n_sel = ellipsoid.normal_coordinate(rho, z)
-	n[sel] = n_sel
+	ellipsoid.minimum_normal_coordinate(rho, z, n)
 	n_mag = 1.5
 	plt.imshow(
 		n, extent=(z.min(), z.max(), rho.min(), rho.max()), origin='lower',
