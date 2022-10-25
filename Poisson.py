@@ -2,9 +2,10 @@
 import numpy as np
 from pyfftw.interfaces import numpy_fft as np_fft
 from scipy.sparse import csr_matrix
-from scipy.sparse.linalg import LinearOperator, cg, lgmres
+from scipy.sparse.linalg import LinearOperator, cg, bicgstab
 from multiprocessing import cpu_count
 import pyfftw; pyfftw.config.NUM_THREADS = cpu_count()
+
 
 #Poisson solver using finite-difference discretization:
 class Poisson:
@@ -22,10 +23,12 @@ class Poisson:
 		assert len(epsInv.shape) == 3
 		S = np.array(epsInv.shape, dtype=int)
 		Omega = np.prod(L) #unit cell volume
+
 		#Remember inputs:
 		self.L = L
 		self.epsInv = epsInv
 		self.dirichletBC = dirichletBC
+
 		#Construct preconditioner:
 		prodS = S.prod()
 		h = L / S
@@ -39,6 +42,7 @@ class Poisson:
 				invGsq[0,0,0] = 0. #periodic G=0 projection
 			return invGsq
 		self.invGsq = getPrecond()
+
 		#Construct matrix for div(eps grad()):
 		data = np.zeros(
 			(prodS, 7),
@@ -107,18 +111,20 @@ class Poisson:
 		if not np.any(self.dirichletBC):
 			phi -= phi.mean()
 
-		#Create preconditioner:
-		def precondFunc(x):
-			return np.real(np_fft.ifftn(self.invGsq * np_fft.fftn(np.reshape(x,S))).flatten())
-		precondOp = LinearOperator((prodS,prodS), precondFunc)
-
-		#Select solver:
+		#Select preconditioner and solver:
 		if self.epsInv.dtype == np.complex128:
-			solver = lgmres
-			solver_name = "LGMRES"
+			solver = bicgstab
+			solver_name = "BiCGstab"
+			precondFunc = (lambda x: np_fft.ifftn(
+				self.invGsq * np_fft.fftn(np.reshape(x, S))
+			).flatten())
 		else:
 			solver = cg
 			solver_name = "CG"
+			precondFunc = (lambda x: np_fft.ifftn(
+				self.invGsq * np_fft.fftn(np.reshape(x, S))
+			).flatten().real)
+		precondOp = LinearOperator((prodS,prodS), precondFunc)
 
 		#Solve matrix equations:
 		global nIter
