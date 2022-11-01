@@ -8,7 +8,7 @@ from Poisson import Poisson
 
 def main():
 	calc = EllipsoidInterfaceCalculation("structure.mat")
-	calc.visualize_geometry("structure.png")
+	calc.visualize_geometry("structure")
 	
 	# Calculate and report dielectric tensor for each frequency:
 	epsilon_arr = []
@@ -30,6 +30,7 @@ def main():
 	savemat(
 		"epsilon.mat",
 		{
+			"freq": calc.freq,  # relayed from input; not used in calculation
 			"epsilon": epsilon_arr,
 			"column_names": ["Avg", "XX", "YY", "ZZ", "YZ", "ZX", "XY"],
 		}
@@ -53,6 +54,7 @@ class EllipsoidInterfaceCalculation:
 		).flatten()
 		self.n_layers = len(self.interface_thickness) + 2
 		self.epsilon = np.array(mat['epsilon'])
+		self.freq = np.array(mat.get('freq', range(len(self.epsilon))))
 		assert self.epsilon.shape[1] == self.n_layers
 		
 		# Enforce constraints on data:
@@ -141,28 +143,37 @@ class EllipsoidInterfaceCalculation:
 		# Interpolate:
 		return np.interp(n, n_grid, prop_grid)
 
-	def visualize_geometry(self, filename):
+	def visualize_geometry(self, filename_prefix):
 		"""Output visualization of geometry to filename."""
 		mask = self.map_property(self.n, np.arange(self.n_layers, dtype=float))
 		n_panels = 4
-		fig, axes = plt.subplots(
-			n_panels, n_panels, sharex=True, sharey=True,
-			figsize=(n_panels*2, n_panels*2),
-		)
-		plt.subplots_adjust(hspace=0.1, wspace=0.1)
-		for i_ax, ax in enumerate(axes.flatten()):
-			iz = (i_ax * self.S[2]) // (n_panels ** 2)
-			z = iz * self.h[2]
-			plt.sca(ax)
-			plt.axis("off")
-			plt.imshow(
-				mask[:, :, iz].T, vmin=0, vmax=self.n_layers-1, origin="lower"
+		for proj_dir, proj_name in enumerate("xyz"):
+			fig, axes = plt.subplots(
+				n_panels, n_panels, sharex=True, sharey=True,
+				figsize=(n_panels*2, n_panels*2),
 			)
-			plt.text(
-				0.5, 0.99, f"{z = :.1f}", transform=ax.transAxes,
-				ha='center', va='bottom', fontsize="small",
+			plt.subplots_adjust(hspace=0.1, wspace=0.1)
+			for i_ax, ax in enumerate(axes.flatten()):
+				i_proj = (i_ax * self.S[proj_dir]) // (n_panels ** 2)
+				proj = i_proj * self.h[proj_dir]
+				index = [slice(None)] * 3
+				index[proj_dir] = i_proj
+				plt.sca(ax)
+				plt.axis("off")
+				plt.imshow(
+					mask[tuple(index)].T,
+					vmin=0, vmax=self.n_layers-1, origin="lower"
+				)
+				plt.text(
+					0.5, 0.99, f"${proj_name}$ = {proj:.1f}",
+					ha='center', va='bottom', fontsize="small",
+					transform=ax.transAxes, 
+				)
+			plt.savefig(
+				f'{filename_prefix}_{proj_name}.png',
+				bbox_inches='tight',
+				dpi=150,
 			)
-		plt.savefig(filename, bbox_inches='tight', dpi=150)
 
 	def get_epsilon_eff(self, epsilon):
 		"""Return effective dielectric tensor for specificied
