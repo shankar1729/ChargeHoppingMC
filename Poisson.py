@@ -88,9 +88,10 @@ class Poisson:
 		indices = None
 		print('\tMatrix dimensions:', self.Lhs.shape, 'with', self.Lhs.nnz, 'non-zero elements (fill', '%.2g%%)' % (self.Lhs.nnz*100./np.prod(self.Lhs.shape)))
 	
-	def solve(self, E, shouldPlot=False):
+	def solve(self, E, phi0=None, shouldPlot=False):
 		"""
 		Compute potential due to an electric field E (dimensions [3,])
+		Optionally provide starting potential phi0.
 		Optionally, if shouldPlot=True, plot slices of the potential for debugging
 		Returns potential (same dimensions as self.epsInv).
 		"""
@@ -100,16 +101,21 @@ class Poisson:
 		S = np.array(self.epsInv.shape)
 		prodS = S.prod()
 		rhs = np.zeros(prodS, dtype=self.epsInv.dtype)
-		phi = np.zeros(prodS, dtype=self.epsInv.dtype)
+		phi = (
+			np.zeros(prodS, dtype=self.epsInv.dtype)
+			if (phi0 is None)
+			else phi0.flatten()
+		)
 		for dim,Edim in enumerate(E):
 			if Edim != 0.:
-				fieldProfile = np.arange(S[dim]) * (-Edim * self.L[dim] / S[dim])
-				shape = [1,1,1]; shape[dim] = S[dim]
-				tile = np.copy(S); tile[dim] = 1
-				phi += np.tile(fieldProfile.reshape(shape), tile).reshape(-1)
 				rhs[self.rhsSel[dim]] += Edim * self.rhsVal[dim]
-		if not np.any(self.dirichletBC):
-			phi -= phi.mean()
+				if phi0 is None:
+					fieldProfile = np.arange(S[dim]) * (-Edim * self.L[dim] / S[dim])
+					shape = [1,1,1]; shape[dim] = S[dim]
+					tile = np.copy(S); tile[dim] = 1
+					phi += np.tile(fieldProfile.reshape(shape), tile).reshape(-1)
+					if not np.any(self.dirichletBC):
+						phi -= phi.mean()
 
 		#Select preconditioner and solver:
 		if self.epsInv.dtype == np.complex128:
@@ -149,9 +155,12 @@ class Poisson:
 			plt.show()
 		return phi
 
-	def computeEps(self):
+	def computeEps(self, phi0=None):
 		"""
 		Compute dielectric tensor (must have dirichletBC = False in all directions).
+		Optionally, phi0 specifies sequence of three potential profiles to
+		use as initial guesses for Poisson solve in each field direction.
+		Return dielectric tensor and final phi (that can be used as phi0 for related run).
 		"""
 		assert (not np.any(self.dirichletBC)) #all directions must be periodic
 		print('\tComputing dielectric tensor:')
@@ -161,10 +170,14 @@ class Poisson:
 		h = self.L / S
 		
 		#Loop over E-field perturbations:
+		phi_out = []
 		for dim1 in range(3):
 			#Get potential for unit field applied in current direction:
-			E = [0,0,0]; E[dim1]=1
-			phi = self.solve(E)
+			E = [0,0,0]
+			E[dim1]=1
+			phi0_i = None if (phi0 is None) else phi0[dim1]
+			phi = self.solve(E, phi0=phi0_i)
+			phi_out.append(phi)
 			#Compute D, which is effectively the same as dielectric since E = 1
 			for dim2 in range(3):
 				phiDiff = phi - np.roll(phi, -1, axis=dim2)
@@ -176,7 +189,7 @@ class Poisson:
 				epsEff[dim1,dim2] = np.mean(phiDiff / epsInvMean) / h[dim2]
 				epsInvMean = None
 				phiDiff = None
-		return epsEff
+		return epsEff, phi_out
 
 
 #---------- Test code ----------
@@ -201,10 +214,10 @@ if __name__ == "__main__":
 
 	#Calculate potential with FD:
 	print('Computing potential:')
-	Poisson(L, epsInv, [False,False,True]).solve([0, 0, 1.], False)
+	Poisson(L, epsInv, [False,False,True]).solve([0, 0, 1.], shouldPlot=False)
 	
 	#Calculate dielectric constant:
-	epsEff = Poisson(L, epsInv).computeEps()
+	epsEff, _ = Poisson(L, epsInv).computeEps()
 	print('Dielectric tensor:\n', epsEff)
 	print('epsAvg:', np.trace(epsEff)/3)
 	

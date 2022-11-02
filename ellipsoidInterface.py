@@ -12,8 +12,8 @@ def main():
 	
 	# Calculate and report dielectric tensor for each frequency:
 	epsilon_arr = []
-	for epsilon in calc.epsilon:
-		print(f'\nCalculating for material epsilons = {epsilon}:')
+	for epsilon, freq in zip(calc.epsilon, calc.freq):
+		print(f'\nCalculating for {freq = :g} material epsilons = {epsilon}:')
 		epsilon_eff = calc.get_epsilon_eff(epsilon)
 		epsilon_arr.append([
 			np.trace(epsilon_eff)/3,  # Avg
@@ -54,8 +54,9 @@ class EllipsoidInterfaceCalculation:
 		).flatten()
 		self.n_layers = len(self.interface_thickness) + 2
 		self.epsilon = np.array(mat['epsilon'])
-		self.freq = np.array(mat.get('freq', range(len(self.epsilon))))
+		self.freq = np.array(mat.get('freq', range(len(self.epsilon)))).flatten()
 		assert self.epsilon.shape[1] == self.n_layers
+		self.phi0 = None  # Initial guesses for Poisson solve
 		
 		# Enforce constraints on data:
 		self.axes *= (
@@ -179,7 +180,8 @@ class EllipsoidInterfaceCalculation:
 		"""Return effective dielectric tensor for specificied
 		set of dielectric constants of each layer."""
 		epsInv = self.map_property(self.n, 1.0 / epsilon)
-		return Poisson(self.L, epsInv).computeEps()
+		epsEff, self.phi0 = Poisson(self.L, epsInv).computeEps(phi0=self.phi0)
+		return epsEff
 
 
 if __name__ == "__main__":
