@@ -195,12 +195,12 @@ class Poisson:
 #---------- Test code ----------
 if __name__ == "__main__":
 	
-	L = np.array([10.,10.,20.])
-	S = np.array([100, 100, 200])
+	L = np.array([10.,10.,10.])
+	S = np.array([100, 100, 100])
 	
 	#Create mask containing a few spheres:
 	from scipy.special import erfc
-	r0 = np.array([[0.,5.,8.],[5.,1.,4.]]); R = 3.5
+	r0 = np.array([[0.,5.,8.],[5.,1.,4.]]); R = 2.8
 	grids1D = tuple([ np.arange(Si, dtype=float)*(L[i]/Si) for i,Si in enumerate(S) ])
 	dr = np.array(np.meshgrid(*grids1D, indexing='ij'))[None,...] - r0[:,:,None,None,None] #displacements from center of sphere
 	Lbcast = np.array(L)[None,:,None,None,None]
@@ -208,8 +208,8 @@ if __name__ == "__main__":
 	mask = 0.5*erfc(np.linalg.norm(dr, axis=1).min(axis=0) - R) #1-voxel smoothing
 	
 	#Convert to dielectric profile:
-	epsIn = 7.0+0.3j
-	epsOut = 2.0+0.1j
+	epsIn = 40.0+170j
+	epsOut = 3.0+0.1j
 	epsInv = 1./epsOut + (1./epsIn - 1./epsOut) * mask
 
 	#Calculate potential with FD:
