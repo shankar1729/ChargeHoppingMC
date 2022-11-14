@@ -29,10 +29,10 @@ class MultiGrid:
 			print(f"{S} ->", end=" ", flush=True)
 			
 			# Construct interpolation = transpose(coarsening) operator:
-			absA = ones_where_nonzero(A)  # csr_matrix(abs(A))
-			absA.sum_duplicates()
-			absA.eliminate_zeros()
-			interp = absA[:, index_coarse.flatten()]
+			nzA = ones_where_nonzero(A)
+			nzA.sum_duplicates()
+			nzA.eliminate_zeros()
+			interp = nzA[:, index_coarse.flatten()]
 			Ncoarse = interp.shape[1]
 			
 			while(True):
@@ -49,7 +49,7 @@ class MultiGrid:
 					break
 				
 				# Set pending rows by interpolating from ready ones
-				interp_pending = absA[pending][:, done] @ interp_done
+				interp_pending = nzA[pending][:, done] @ interp_done
 				
 				# Combine pieces of interp:
 				interp_done = coo_matrix(interp_done)
@@ -65,7 +65,7 @@ class MultiGrid:
 				), shape=(N, Ncoarse))
 			
 			# Finalize interpolation matrix and cleanup temporary matrices:
-			del absA
+			del nzA
 			self.interp = csr_matrix(interp)
 			del interp
 			
