@@ -11,11 +11,14 @@ def main():
 	calc.visualize_geometry("structure")
 	
 	# Calculate and report dielectric tensor for each frequency:
-	epsilon_arr = []
-	for epsilon, freq in zip(calc.epsilon, calc.freq):
+	sort_index = freq.argsort()[::-1]  # solve from high to low frequency
+	epsilon_arr = np.zeros((len(sort_index), 7), dtype=calc.epsilon.dtype)
+	for i_freq, freq, epsilon in zip(
+		sort_index, calc.freq[sort_index], calc.epsilon[sort_index]
+	):
 		print(f'\nCalculating for {freq = :g} material epsilons = {epsilon}:')
 		epsilon_eff = calc.get_epsilon_eff(epsilon)
-		epsilon_arr.append([
+		epsilon_arr[i_freq] = np.array([
 			np.trace(epsilon_eff)/3,  # Avg
 			epsilon_eff[0, 0], # XX
 			epsilon_eff[1, 1], # YY

@@ -3,6 +3,7 @@ import numpy as np
 from pyfftw.interfaces import numpy_fft as np_fft
 from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import LinearOperator, cg, bicgstab
+from MultiGrid import MultiGrid
 from multiprocessing import cpu_count
 import pyfftw; pyfftw.config.NUM_THREADS = cpu_count()
 
@@ -118,6 +119,7 @@ class Poisson:
 						phi -= phi.mean()
 
 		#Select preconditioner and solver:
+		# mg = MultiGrid(self.Lhs, S, subtract_mean=(not np.any(self.dirichletBC)))
 		if self.epsInv.dtype == np.complex128:
 			solver = bicgstab
 			solver_name = "BiCGstab"
@@ -131,6 +133,7 @@ class Poisson:
 				self.invGsq * np_fft.fftn(np.reshape(x, S))
 			).flatten().real)
 		precondOp = LinearOperator((prodS,prodS), precondFunc)
+		# precondOp = LinearOperator((prodS,prodS), mg.Vcycle)
 
 		#Solve matrix equations:
 		global nIter
@@ -195,8 +198,8 @@ class Poisson:
 #---------- Test code ----------
 if __name__ == "__main__":
 	
-	L = np.array([10.,10.,10.])
-	S = np.array([100, 100, 100])
+	L = np.full(3, 10.)
+	S = np.full(3, 100)
 	
 	#Create mask containing a few spheres:
 	from scipy.special import erfc
