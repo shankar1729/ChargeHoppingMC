@@ -1,6 +1,5 @@
 import numpy as np
 from scipy.sparse import csr_matrix, coo_matrix, diags
-import time
 
 
 class MultiGrid:
@@ -19,7 +18,6 @@ class MultiGrid:
 			print("\tMultigrid:", end=" ", flush=True)
 		
 		if N <= Ndirect:
-			#A[0] = 0.
 			self.invA = np.linalg.pinv(A.toarray())
 			self.next_grid = None
 			print(f"{S}.", flush=True)
