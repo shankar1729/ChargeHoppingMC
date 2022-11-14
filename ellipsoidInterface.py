@@ -11,7 +11,7 @@ def main():
 	calc.visualize_geometry("structure")
 	
 	# Calculate and report dielectric tensor for each frequency:
-	sort_index = freq.argsort()[::-1]  # solve from high to low frequency
+	sort_index = calc.freq.argsort()[::-1]  # solve from high to low frequency
 	epsilon_arr = np.zeros((len(sort_index), 7), dtype=calc.epsilon.dtype)
 	for i_freq, freq, epsilon in zip(
 		sort_index, calc.freq[sort_index], calc.epsilon[sort_index]

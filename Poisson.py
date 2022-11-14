@@ -119,7 +119,7 @@ class Poisson:
 						phi -= phi.mean()
 
 		#Select preconditioner and solver:
-		# mg = MultiGrid(self.Lhs, S, subtract_mean=(not np.any(self.dirichletBC)))
+		mg = MultiGrid(self.Lhs, S, subtract_mean=(not np.any(self.dirichletBC)))
 		if self.epsInv.dtype == np.complex128:
 			solver = bicgstab
 			solver_name = "BiCGstab"
@@ -132,8 +132,8 @@ class Poisson:
 			precondFunc = (lambda x: np_fft.ifftn(
 				self.invGsq * np_fft.fftn(np.reshape(x, S))
 			).flatten().real)
-		precondOp = LinearOperator((prodS,prodS), precondFunc)
-		# precondOp = LinearOperator((prodS,prodS), mg.Vcycle)
+		# precondOp = LinearOperator((prodS,prodS), precondFunc)
+		precondOp = LinearOperator((prodS,prodS), mg.Vcycle)
 
 		#Solve matrix equations:
 		global nIter

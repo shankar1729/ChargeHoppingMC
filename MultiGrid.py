@@ -29,7 +29,7 @@ class MultiGrid:
 			print(f"{S} ->", end=" ", flush=True)
 			
 			# Construct interpolation = transpose(coarsening) operator:
-			absA = csr_matrix(abs(A))
+			absA = ones_where_nonzero(A)  # csr_matrix(abs(A))
 			absA.sum_duplicates()
 			absA.eliminate_zeros()
 			interp = absA[:, index_coarse.flatten()]
@@ -82,10 +82,20 @@ class MultiGrid:
 		if self.next_grid is None:
 			return self.invA @ rhs  # Exact inverse on coarsest grid
 		
+		if self.subtract_mean:
+			rhs = rhs - rhs.mean()
+		
 		Dinv_rhs = self.Dinv * rhs  # Pre-relaxtion applied to phi = 0
 		r = rhs - self.A @ Dinv_rhs  # Compute residual
 		phi = Dinv_rhs + self.interp @ self.next_grid.Vcycle(self.interp.T @ r)
 		phi += Dinv_rhs - self.Dinv * (self.A @ phi)  # Post-relaxation
+
 		if self.subtract_mean:
 			phi -= phi.mean()
 		return phi
+
+
+def ones_where_nonzero(A):
+	"""Return sparse matrix with ones at non-zero locations of sparse matrix."""
+	row, col = A.nonzero()
+	return csr_matrix((np.ones(row.shape), (row, col)), shape=A.shape)
