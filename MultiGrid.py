@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.sparse import csr_matrix, coo_matrix, diags
+import time
 
 
 class MultiGrid:
@@ -18,6 +19,7 @@ class MultiGrid:
 			print("\tMultigrid:", end=" ", flush=True)
 		
 		if N <= Ndirect:
+			#A[0] = 0.
 			self.invA = np.linalg.pinv(A.toarray())
 			self.next_grid = None
 			print(f"{S}.", flush=True)
@@ -66,17 +68,18 @@ class MultiGrid:
 			
 			# Finalize interpolation matrix and cleanup temporary matrices:
 			del nzA
-			self.interp = csr_matrix(interp)
-			del interp
+			interp = csr_matrix(interp)
 			
 			# Store pieces for relaxation operator (approximate A inverse):
-			self.A = A
-			self.Dinv = 1.0 / A.diagonal()
 			self.subtract_mean = subtract_mean
+			Dinv = diags(1.0 / A.diagonal())
+			Ainterp = csr_matrix(A @ interp)
+			self.RI = interp - Dinv @ Ainterp  # relax, interpolate
+			self.O = csr_matrix(2 * Dinv - Dinv @ A @ Dinv)  # offset
 			
 			# Construct coarse-grid matrix:
-			Acoarse = self.interp.T @ (A @ self.interp)
-			self.next_grid = MultiGrid(Acoarse, Scoarse, False, Ndirect, False)
+			Acoarse = interp.T @ Ainterp
+			self.next_grid = MultiGrid(Acoarse, Scoarse, subtract_mean, Ndirect, False)
 
 	def Vcycle(self, rhs):
 		if self.next_grid is None:
@@ -85,10 +88,7 @@ class MultiGrid:
 		if self.subtract_mean:
 			rhs = rhs - rhs.mean()
 		
-		Dinv_rhs = self.Dinv * rhs  # Pre-relaxtion applied to phi = 0
-		r = rhs - self.A @ Dinv_rhs  # Compute residual
-		phi = Dinv_rhs + self.interp @ self.next_grid.Vcycle(self.interp.T @ r)
-		phi += Dinv_rhs - self.Dinv * (self.A @ phi)  # Post-relaxation
+		phi = self.O @ rhs + self.RI @ self.next_grid.Vcycle(self.RI.T @ rhs)
 
 		if self.subtract_mean:
 			phi -= phi.mean()
