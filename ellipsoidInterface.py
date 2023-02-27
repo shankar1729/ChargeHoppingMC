@@ -47,7 +47,7 @@ class EllipsoidInterfaceCalculation:
 		mat = loadmat('structure.mat')
 		self.aspect_ratio = float(mat['aspect_ratio'])
 		self.centers = np.array(mat['centers'])
-		self.axes = np.array(mat['axes'])
+		self.axes = np.array(mat['axes'], dtype=float)
 		self.L = np.array(mat['L'], dtype=float).flatten()  # box size
 		self.h = np.array(mat['h'], dtype=float).flatten()  # grid spacing
 		self.a = float(mat['a'])  # semi-major axis length (polar radius)

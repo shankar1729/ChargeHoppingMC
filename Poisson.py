@@ -75,8 +75,28 @@ class Poisson:
 		print('\tMatrix dimensions:', self.Lhs.shape, 'with', self.Lhs.nnz, 'non-zero elements (fill', '%.2g%%)' % (self.Lhs.nnz*100./np.prod(self.Lhs.shape)))
 		
 		# Initialize preconditioner:
-		mg = MultiGrid(self.Lhs, S, subtract_mean=(not np.any(dirichletBC)))
-		self.precond = LinearOperator((prodS, prodS), mg.Vcycle)
+		use_multigrid = False
+		if use_multigrid:
+			mg = MultiGrid(self.Lhs, S, subtract_mean=(not np.any(dirichletBC)))
+			precond_func = mg.Vcycle
+		else:
+			def getPrecond():
+				grids1D = [np.concatenate((np.arange(s//2+1), np.arange(s//2+1-s,0))) for s in S]
+				iG = np.array(np.meshgrid(*tuple(grids1D), indexing='ij')).reshape(3,-1).T
+				Gsq = np.sum((iG * (2*np.pi/L[None,:]))**2, axis=-1); iG = None
+				Gsq[0] = np.min(Gsq[1:])
+				invGsq = np.reshape(1./Gsq, S)
+				if not np.any(dirichletBC):
+					invGsq[0,0,0] = 0. #periodic G=0 projection
+				return invGsq
+			self.invGsq = getPrecond()
+			
+			def precond_func(x):
+				result = np.fft.ifftn(
+					self.invGsq * np.fft.fftn(np.reshape(x, S))
+				).flatten()
+				return result if (epsInv.dtype == np.complex128) else result.real
+		self.precond = LinearOperator((prodS, prodS), precond_func)
 	
 	def solve(self, E, phi0=None, shouldPlot=False):
 		"""

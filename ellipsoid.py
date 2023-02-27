@@ -81,7 +81,7 @@ def ellipse_normal_point(a, b, x, y, n_iter=10):
 if __name__ == "__main__":
 	import matplotlib.pyplot as plt
 	ellipsoid = Ellipsoid(a=8., b=1., n_max=1.)
-	z, rho = np.meshgrid(np.linspace(0, 10, 10001), np.linspace(0, 3, 3001))
+	z, rho = np.meshgrid(np.linspace(0, 10, 1000), np.linspace(0, 3, 300))
 	n = np.full(z.shape, ellipsoid.n_max)
 	ellipsoid.minimum_normal_coordinate(rho, z, n)
 	n_mag = 1.5
