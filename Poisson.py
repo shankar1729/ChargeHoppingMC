@@ -4,11 +4,28 @@ from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import LinearOperator, cg, bicgstab
 from MultiGrid import MultiGrid
 
+try:
+    # Use faster FFTs from FFTW if available
+    from pyfftw.interfaces import numpy_fft as np_fft
+    from multiprocessing import cpu_count
+    import pyfftw
+    pyfftw.config.NUM_THREADS = cpu_count()
+except ImportError:
+    # Fallback to numpy FFT otherwise
+    from numpy import fft as np_fft
+
 
 #Poisson solver using finite-difference discretization:
 class Poisson:
 	
-	def __init__(self, L, epsInv, dirichletBC=[False,False,False]):
+	def __init__(
+		self,
+		L,
+		epsInv,
+		dirichletBC=[False,False,False],
+		use_multigrid=False,
+		rescale=True
+	):
 		"""
 		Set up Poisson solver in a box of size L (dimensions [3,])
 		with inverse dielectric profile epsInv (3D scalar field).
@@ -69,13 +86,20 @@ class Poisson:
 					self.rhsVal[dim].append(-data[sel,iEdge] * (-L[dim]*pm)) #potential difference between ends
 			self.rhsSel[dim] = np.concatenate(self.rhsSel[dim])
 			self.rhsVal[dim] = np.concatenate(self.rhsVal[dim])
+		# --- Rescale for stability
+		self.rescale = rescale
+		if rescale:
+			self.scale = np.sqrt(self.epsInv.flatten())
+			for rhsSel_dim, rhsVal_dim in zip(self.rhsSel, self.rhsVal):
+				rhsVal_dim *= self.scale[rhsSel_dim]  # Row-scale RHS
+			data *= self.scale[:, None]  # Row-scale LHS
+			data *= self.scale[indices]  # Col-scale LHS
 		self.Lhs = csr_matrix((data.reshape(-1), indices.reshape(-1), range(0,7*prodS+1,7)), shape=(prodS, prodS))
 		data = None
 		indices = None
 		print('\tMatrix dimensions:', self.Lhs.shape, 'with', self.Lhs.nnz, 'non-zero elements (fill', '%.2g%%)' % (self.Lhs.nnz*100./np.prod(self.Lhs.shape)))
 		
 		# Initialize preconditioner:
-		use_multigrid = False
 		if use_multigrid:
 			mg = MultiGrid(self.Lhs, S, subtract_mean=(not np.any(dirichletBC)))
 			precond_func = mg.Vcycle
@@ -92,9 +116,11 @@ class Poisson:
 			self.invGsq = getPrecond()
 			
 			def precond_func(x):
-				result = np.fft.ifftn(
-					self.invGsq * np.fft.fftn(np.reshape(x, S))
+				x_scaled = (x / self.scale) if self.rescale else x
+				result = np_fft.ifftn(
+					self.invGsq * np_fft.fftn(np.reshape(x_scaled, S))
 				).flatten()
+				result = (result * self.scale) if self.rescale else result
 				return result if (epsInv.dtype == np.complex128) else result.real
 		self.precond = LinearOperator((prodS, prodS), precond_func)
 	
@@ -126,6 +152,8 @@ class Poisson:
 					phi += np.tile(fieldProfile.reshape(shape), tile).reshape(-1)
 					if not np.any(self.dirichletBC):
 						phi -= phi.mean()
+					if self.rescale:
+						phi /= self.scale  # scaled solution guess (due to column scaling)
 
 		#Select solver:
 		if self.epsInv.dtype == np.complex128:
@@ -143,8 +171,10 @@ class Poisson:
 			nIter += 1
 			print(nIter, end=' ', flush=True)
 		print(f'\t{solver_name}: ', end='', flush=True)
-		phi,info = solver(self.Lhs, rhs, tol=1e-6, callback=iterProgress, x0=phi, M=self.precond, maxiter=100)
+		phi,info = solver(self.Lhs, rhs, tol=1e-4, callback=iterProgress, x0=phi, M=self.precond, maxiter=100)
 		print('done.', flush=True)
+		if self.rescale:
+			phi *= self.scale  # convert to actual potential (compensate for column scaling)
 		phi = np.reshape(phi,S)
 		rhs = None
 
