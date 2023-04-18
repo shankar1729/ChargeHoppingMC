@@ -10,14 +10,14 @@ from common import *
 import sys
 
 if len(sys.argv)>1:
-	suffix = sys.argv[1]
-	if suffix != 'SwapXZ':
-		print('If specified, argument must be "SwapXZ" and x and z axis will be swapped.')
-		exit(1)
-	swapXZ = True
+    suffix = sys.argv[1]
+    if suffix != 'SwapXZ':
+        print('If specified, argument must be "SwapXZ" and x and z axis will be swapped.')
+        exit(1)
+    swapXZ = True
 else:
-	suffix = ''
-	swapXZ = False
+    suffix = ''
+    swapXZ = False
 
 #Extract information from matlab file:
 matFile = loadmat('structure.mat')
@@ -34,28 +34,28 @@ matFile = None
 
 #Apply x <-> z swap if required:
 if swapXZ:
-	centers = centers[:,::-1]
-	axisDir = axisDir[:,::-1]
+    centers = centers[:,::-1]
+    axisDir = axisDir[:,::-1]
 
 #Construct mask (1 inside particles, 0 outside):
 def constructMask():
-	S = np.round(L/hTarget).astype(int)
-	grids1D = [ np.arange(Si)*(L[i]/Si) for i,Si in enumerate(S) ]
-	mask = np.zeros(S)
-	#Split into loop over first direction to save memory:
-	print('Creating mask in', S[0], 'slices:', end=' ', flush=True)
-	for i0 in range(S[0]):
-		dr = ( np.array(np.meshgrid(grids1D[0][i0:i0+1], grids1D[1], grids1D[2], indexing='ij'))[None,...]
-			- centers[...,None,None,None] ) #vectors from each center to each grid point
-		Lbcast = L[None,:,None,None,None]
-		dr -= np.floor(0.5+dr/Lbcast)*Lbcast #wrap displacements by minimum image convention
-		dist = np.maximum(np.sqrt(np.sum(dr**2, axis=1)), 1e-6) #corresponding length (regularized to avoide division by zero below) 
-		cosTheta = np.sum(dr * axisDir[...,None,None,None], axis=1) / dist #corresponding cosTheta's to major axis direction
-		dist -= b/np.sqrt(1 + ((b/a)**2 - 1)*(cosTheta**2)) #distance outside surface of ellipsoid
-		mask[i0:i0+1] = 0.5*erfc(dist.min(axis=0)) #1-voxel smoothing
-		print(i0+1, end=' ', flush=True)
-	print('done.\n')
-	return mask
+    S = np.round(L/hTarget).astype(int)
+    grids1D = [ np.arange(Si)*(L[i]/Si) for i,Si in enumerate(S) ]
+    mask = np.zeros(S)
+    #Split into loop over first direction to save memory:
+    print('Creating mask in', S[0], 'slices:', end=' ', flush=True)
+    for i0 in range(S[0]):
+        dr = ( np.array(np.meshgrid(grids1D[0][i0:i0+1], grids1D[1], grids1D[2], indexing='ij'))[None,...]
+            - centers[...,None,None,None] ) #vectors from each center to each grid point
+        Lbcast = L[None,:,None,None,None]
+        dr -= np.floor(0.5+dr/Lbcast)*Lbcast #wrap displacements by minimum image convention
+        dist = np.maximum(np.sqrt(np.sum(dr**2, axis=1)), 1e-6) #corresponding length (regularized to avoide division by zero below) 
+        cosTheta = np.sum(dr * axisDir[...,None,None,None], axis=1) / dist #corresponding cosTheta's to major axis direction
+        dist -= b/np.sqrt(1 + ((b/a)**2 - 1)*(cosTheta**2)) #distance outside surface of ellipsoid
+        mask[i0:i0+1] = 0.5*erfc(dist.min(axis=0)) #1-voxel smoothing
+        print(i0+1, end=' ', flush=True)
+    print('done.\n')
+    return mask
 mask = constructMask()
 print('Volume fraction: expected:', volFrac, 'actual:', mask.mean())
 printDuration('MaskDone')
@@ -96,8 +96,8 @@ nElectrons = 1 + int(np.max(trajectory['f0']))
 v = np.zeros(nElectrons)
 print('Analyzing trajectory with ', nElectrons, 'electrons: ', end='', flush=True)
 for i in range(nElectrons):
-	finalEntry = trajectory[np.where(trajectory['f0']==i)[0][-1]] #final state of current electron
-	v[i] = finalEntry[-1] / finalEntry[1] #average velocity over entire trajectory
+    finalEntry = trajectory[np.where(trajectory['f0']==i)[0][-1]] #final state of current electron
+    v[i] = finalEntry[-1] / finalEntry[1] #average velocity over entire trajectory
 print('done.')
 mu = v / (params["Efield"]*1e9) # mobility [m^2/(V.s)] for each electron
 muMean = mu.mean() #average moibility
@@ -106,9 +106,9 @@ print('Mobility:', muMean, '+/-', muErr)
 
 #Bypass dielectric calculation in x <-> z swap case (as results will be redundant with unswapped case):
 if swapXZ:
-	results = np.array([[muMean, muErr]])
-	np.savetxt('results'+suffix+'.csv', results, delimiter=',', fmt='%g')
-	exit(0)
+    results = np.array([[muMean, muErr]])
+    np.savetxt('results'+suffix+'.csv', results, delimiter=',', fmt='%g')
+    exit(0)
 
 #Compute dielectric function:
 epsEff, epsEff_NP, epsEff_BG = PeriodicFD(np.array(L), mask, params['epsNP'], params['epsBG']).computeEps(deriv=True)
@@ -125,6 +125,6 @@ printDuration('DielDone')
 
 #Write results file:
 def unpack(mat):
-	return [ mat[0,0], mat[1,1], mat[2,2], mat[1,2], mat[2,0], mat[0,1] ]
+    return [ mat[0,0], mat[1,1], mat[2,2], mat[1,2], mat[2,0], mat[0,1] ]
 results = np.concatenate(([ muMean, muErr, epsAvg, epsAvg_NP, epsAvg_BG], unpack(epsEff), unpack(epsEff_NP), unpack(epsEff_BG)))[None,:]
 np.savetxt('results'+suffix+'.csv', results, delimiter=',', fmt='%g')
