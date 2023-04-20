@@ -9,6 +9,10 @@ from PeriodicFD import PeriodicFD
 from common import *
 import sys
 
+print("This old code no longer works. Switch to ellipsoidInterface.")
+exit()
+
+
 if len(sys.argv)>1:
     suffix = sys.argv[1]
     if suffix != 'SwapXZ':

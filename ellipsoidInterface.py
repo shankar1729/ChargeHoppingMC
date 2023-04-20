@@ -1,3 +1,4 @@
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter1d
@@ -7,8 +8,37 @@ from Poisson import Poisson
 
 
 def main():
+    # Get command line arguments:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-d",
+        "--dielectric",
+        help="compute dielectric tensor",
+        action="store_true",
+    )
+    parser.add_argument(
+        "-m",
+        "--mobility",
+        help="compute carrier mobility",
+        action="store_true",
+    )
+    args = parser.parse_args()
+    compute_both = not (args.mobility or args.dielectric)  #default is both
+
+    # Load inputs:
     calc = EllipsoidInterfaceCalculation("structure.mat")
     calc.visualize_geometry("structure")
+
+    # Calculate mobility if requested:
+    if args.mobility or compute_both:
+        run_mobility(calc)
+
+    # Calculate epsilon if requested:
+    if args.dielectric or compute_both:
+        run_epsilon(calc)
+
+
+def run_epsilon(calc):
     
     # Calculate and report dielectric tensor for each frequency:
     sort_index = calc.freq.argsort()[::-1]  # solve from high to low frequency
@@ -40,11 +70,17 @@ def main():
     )
 
 
+def run_mobility(calc):
+    print("Running mobility")
+    calc.get_mobility(2)
+
+
 class EllipsoidInterfaceCalculation:
     
     def __init__(self, filename):
         """Initialize calculation parameters from a mat filename."""
         mat = loadmat('structure.mat')
+        self.molecule = str(mat["molecule"][0]) if ("molecule" in mat) else None 
         self.aspect_ratio = float(mat['aspect_ratio'])
         self.centers = np.array(mat['centers'])
         self.axes = np.array(mat['axes'], dtype=float)
@@ -150,6 +186,12 @@ class EllipsoidInterfaceCalculation:
     def visualize_geometry(self, filename_prefix):
         """Output visualization of geometry to filename."""
         mask = self.map_property(self.n, np.arange(self.n_layers, dtype=float))
+        self.visualize_field(
+            filename_prefix, mask, vmin=0, vmax=self.n_layers - 1
+        )
+
+    def visualize_field(self, filename_prefix, value, vmin=None, vmax=None):
+        """Output visualization of scalar field `value` to filename."""
         n_panels = 4
         for proj_dir, proj_name in enumerate("xyz"):
             fig, axes = plt.subplots(
@@ -165,8 +207,7 @@ class EllipsoidInterfaceCalculation:
                 plt.sca(ax)
                 plt.axis("off")
                 plt.imshow(
-                    mask[tuple(index)].T,
-                    vmin=0, vmax=self.n_layers-1, origin="lower"
+                    value[tuple(index)].T, vmin=vmin, vmax=vmax, origin="lower"
                 )
                 plt.text(
                     0.5, 0.99, f"${proj_name}$ = {proj:.1f}",
@@ -186,6 +227,61 @@ class EllipsoidInterfaceCalculation:
         epsEff, self.phi0 = Poisson(self.L, epsInv).computeEps(phi0=self.phi0)
         return epsEff
 
+    def get_mobility(self, i_dir):
+        """Compute carrier mobility by Monte Carlo simulations.
+        Here, `i_dir` is 0-based index of non-periodic direction with field.
+        """
+        assert self.molecule is not None  # Need to know for trap distribution
+        
+        # Create trap distributions for each type at each spatial location:
+        E0 = np.zeros((np.prod(self.S), 3))
+        # --- filler
+        trapDepthFiller = 1.1
+        # --- matrix
+        trapDepthSigma = 0.224  # from previous paper
+        trapDepthMatrix = np.random.randn(len(E0)) * trapDepthSigma
+        # --- functional group
+        trapHistogram = {
+            "thiophene": [1, 2, 2, 3, 5, 2],
+            "terthiophene": [2, 5, 5, 4, 3, 3, 1, 3, 2, 1],
+            "ferrocene": [8, 4, 5, 7, 2, 2, 3, 0, 1, 1],
+        }  # from DFT calculations, trap counts within constant-width bins 
+        trapBinWidth = 0.2  # in eV
+        trapCDF = np.cumsum([0] + trapHistogram[self.molecule]).astype(float)
+        trapCount = trapCDF[-1]  # in the DFT, this is for eff volume ~ 15 nm^3
+        trapCDF *= 1.0 / trapCount  # normalize PDF to 1
+        trapBins = trapBinWidth * np.arange(len(trapCDF))
+        trapDepthMol = np.interp(np.random.rand(len(E0)), trapCDF, trapBins)
+        # --- account for functional group only in part of extrinsic interface
+        dftVolume = 15.0
+        voxelVolume = np.prod(self.h)
+        trapProb = trapCount / (trapCount + dftVolume / voxelVolume)
+        sel = np.where(np.random.rand(len(E0)) > trapProb)[0]
+        trapDepthMol[sel] = trapDepthMatrix[sel]
+        
+        # Create energy landscape using mask:
+        mask = self.map_property(
+            self.n, np.arange(self.n_layers, dtype=float)
+        ).flatten()
+        E0 = -trapDepthMatrix
+        sel_mol = np.where(mask < 1.5)[0]  # select upto extrinsic interface
+        E0[sel_mol] = -trapDepthMol[sel_mol]
+        sel_filler = np.where(mask < 0.5)[0]  # select filler alone
+        E0[sel_filler] = -trapDepthFiller
+        E0 = E0.reshape(self.S)
+        if i_dir == 2:  # Visualize trap landscape for one of the directions
+            self.visualize_field("energy", E0, vmin=E0.min(), vmax=E0.max())
+        exit()
+
+        #--- calculate polymer internal DOS
+        Epoly = params["dosMu"] + params["dosSigma"]*np.random.randn(*S)
+        #--- calculate electric field contributions and mask:
+        Ez = params["Efield"]
+        mask = params["mask"]
+        print('Solving Poisson equation:')
+        phi = PeriodicFD(L, mask, epsNP, epsBG, [False,False,True]).solve([0,0,Ez], shouldPlotNP)
+        #--- combine field and DOS contributions to energy landscape:
+        return phi + np.where(mask>0.5, params["trapDepthNP"], Epoly)
 
 if __name__ == "__main__":
     main()
