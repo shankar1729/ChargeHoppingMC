@@ -150,11 +150,11 @@ class Poisson:
                     shape = [1,1,1]; shape[dim] = S[dim]
                     tile = np.copy(S); tile[dim] = 1
                     phi += np.tile(fieldProfile.reshape(shape), tile).reshape(-1)
-                    if not np.any(self.dirichletBC):
-                        phi -= phi.mean()
+        if not np.any(self.dirichletBC):
+            phi -= phi.mean()
 
         #Select solver:
-        if self.epsInv.dtype == np.complex128:
+        if (self.epsInv.dtype == np.complex128) or self.rescale:
             solver = bicgstab
             solver_name = "BiCGstab"
         else:
@@ -169,22 +169,24 @@ class Poisson:
             nIter += 1
             print(nIter, end=' ', flush=True)
         print(f'\t{solver_name}: ', end='', flush=True)
+        if shouldPlot:
+            phiPrev = np.copy(phi).reshape(S)  # to plot change below
         if self.rescale:
             phi /= self.scale  # convert to scaled potential (compensate for column scaling)
         phi, info = solver(self.Lhs, rhs, tol=1e-4, callback=iterProgress, x0=phi, M=self.precond, maxiter=100)
         if self.rescale:
             phi *= self.scale  # convert to actual potential (compensate for column scaling)
         print('done.', flush=True)
-        phi = np.reshape(phi,S)
+        phi = phi.reshape(S)
         rhs = None
 
         #Optional plot:
         if shouldPlot:
             import matplotlib.pyplot as plt
             plt.figure()
-            plotSlice = phi[0, :, :]
+            plotSlice = (phi - phiPrev)[0, :, :]
             plt.imshow(plotSlice)
-            plt.colorbar()
+            plt.colorbar(label=r"$\Delta\phi$")
             plt.show()
         return phi
 

@@ -259,7 +259,7 @@ class EllipsoidInterfaceCalculation:
         sel = np.where(np.random.rand(len(E0)) > trapProb)[0]
         trapDepthMol[sel] = trapDepthMatrix[sel]
         
-        # Create energy landscape using mask:
+        # Create energy landscape using material mask:
         mask = self.map_property(
             self.n, np.arange(self.n_layers, dtype=float)
         ).flatten()
@@ -271,10 +271,24 @@ class EllipsoidInterfaceCalculation:
         E0 = E0.reshape(self.S)
         if i_dir == 2:  # Visualize trap landscape for one of the directions
             self.visualize_field("energy", E0, vmin=E0.min(), vmax=E0.max())
+        
+        # Add electric field contributions:
+        Efield = 0.06  # in V/m
+        # --- set up boundary conditions
+        Evec = [0.] * 3
+        Evec[i_dir] = Efield
+        dirichletBC = [False] * 3
+        dirichletBC[i_dir] = True
+        # --- solve Poisson equation
+        i_lowest_freq = self.freq.argmin()
+        epsilon = self.epsilon[i_lowest_freq].real  # DC, dielectric only
+        epsInv = self.map_property(self.n, 1.0 / epsilon)
+        phi = Poisson(self.L, epsInv, dirichletBC).solve(Evec)
+        print(phi[..., 0].mean(), phi[..., -1].mean())
+        print(phi[..., 0].std(), phi[..., -1].std())
         exit()
 
         #--- calculate polymer internal DOS
-        Epoly = params["dosMu"] + params["dosSigma"]*np.random.randn(*S)
         #--- calculate electric field contributions and mask:
         Ez = params["Efield"]
         mask = params["mask"]
