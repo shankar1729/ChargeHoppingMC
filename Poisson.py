@@ -152,8 +152,6 @@ class Poisson:
                     phi += np.tile(fieldProfile.reshape(shape), tile).reshape(-1)
                     if not np.any(self.dirichletBC):
                         phi -= phi.mean()
-                    if self.rescale:
-                        phi /= self.scale  # scaled solution guess (due to column scaling)
 
         #Select solver:
         if self.epsInv.dtype == np.complex128:
@@ -171,18 +169,20 @@ class Poisson:
             nIter += 1
             print(nIter, end=' ', flush=True)
         print(f'\t{solver_name}: ', end='', flush=True)
-        phi,info = solver(self.Lhs, rhs, tol=1e-4, callback=iterProgress, x0=phi, M=self.precond, maxiter=100)
-        print('done.', flush=True)
+        if self.rescale:
+            phi /= self.scale  # convert to scaled potential (compensate for column scaling)
+        phi, info = solver(self.Lhs, rhs, tol=1e-4, callback=iterProgress, x0=phi, M=self.precond, maxiter=100)
         if self.rescale:
             phi *= self.scale  # convert to actual potential (compensate for column scaling)
+        print('done.', flush=True)
         phi = np.reshape(phi,S)
         rhs = None
 
         #Optional plot:
         if shouldPlot:
             import matplotlib.pyplot as plt
-            plt.figure(1)
-            plotSlice = phi[0,:,:]
+            plt.figure()
+            plotSlice = phi[0, :, :]
             plt.imshow(plotSlice)
             plt.colorbar()
             plt.show()
