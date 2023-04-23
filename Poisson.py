@@ -80,7 +80,7 @@ class Poisson:
                 sel = np.where((indices[:,iEdge]-indices[:,0])*pm < 0)[0]
                 self.rhsSel[dim].append(sel)
                 if dirichletBC[dim]:
-                    self.rhsVal[dim].append(-data[sel,iEdge] * (-(L[dim] if pm>0 else -h[dim]))) #set phi in adjacent off-grid point
+                    self.rhsVal[dim].append(-data[sel,iEdge] * (-((L[dim] + h[dim]) if pm>0 else 0.0))) #set phi in adjacent off-grid point
                     data[sel,iEdge] = 0.
                 else:
                     self.rhsVal[dim].append(-data[sel,iEdge] * (-L[dim]*pm)) #potential difference between ends
@@ -146,7 +146,7 @@ class Poisson:
             if Edim != 0.:
                 rhs[self.rhsSel[dim]] += Edim * self.rhsVal[dim]
                 if phi0 is None:
-                    fieldProfile = np.arange(S[dim]) * (-Edim * self.L[dim] / S[dim])
+                    fieldProfile = (1 + np.arange(S[dim])) * (-Edim * self.L[dim] / S[dim])
                     shape = [1,1,1]; shape[dim] = S[dim]
                     tile = np.copy(S); tile[dim] = 1
                     phi += np.tile(fieldProfile.reshape(shape), tile).reshape(-1)
