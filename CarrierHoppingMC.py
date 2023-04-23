@@ -1,5 +1,6 @@
 #!/usr/bin/env python
-from common import flattenedMesh
+from common import flattened_mesh, kB
+import numpy as np
 
 
 class CarrierHoppingMC:
@@ -7,7 +8,7 @@ class CarrierHoppingMC:
     def __init__(
         self,
         *,
-        L: np.ndarray  #: box-size in each dimension
+        L: np.ndarray,  #: box-size in each dimension
         E0: np.ndarray,  #: energy landscape on grid
         epsBG: float, #: background dielectric constant
         hopDistance: float, #: distance per hop
@@ -15,32 +16,44 @@ class CarrierHoppingMC:
         maxHops: int, #: number of hops per electron
         nElectrons: int, #: number of electrons to propagate at once
         tMax: float,  #: maximum time in sumulation
-        T: float, #: temperature
+        T: float, #: temperature in Kelvin
     ):
         
         #Initialize box and grid:
-        S = E0.shape
+        S = np.array(E0.shape)
         h = L / S   # grid spacing
                 
         #Initialize neighbour list and distance factors:
         drMax = 5.*hopDistance #truncate exponential distance function at exp(-5)
-        self.irMax = int(np.ceil(drMax/h)) #max number of grid points electron can hop
-        irGrid = np.arange(-self.irMax,+self.irMax+1) #list of relative neighbour indices in 1D
-        self.ir = flattenedMesh(irGrid, irGrid, irGrid).T  #3 x N array of neighbour indices
+        self.irMax = np.ceil(drMax/h).astype(int) #max number of grid points electron can hop
+        irGrids = tuple(
+            np.arange(-n, n+1) for n in self.irMax
+        )  # list of relative neighbour indices in each dimension
+        self.ir = flattened_mesh(*irGrids).T  #3 x N array of neighbour indices
         #--- calculate distances and select neighbours within drMax:
-        dr = np.sqrt(np.sum((self.ir*h)**2, axis=0))
+        dr = np.sqrt(np.sum((self.ir * h[:, None])**2, axis=0))
         irSel = np.where(np.logical_and(dr<=drMax, dr>0))[0] #select indices within a sphere of radius drMax
-        self.ir = self.ir[:,irSel]
+        self.ir = self.ir[:, irSel]
         self.wr = np.exp(-dr[irSel]/hopDistance) #exponential probability factor due to length of hop
         
         #Pad energy landscape to accomodate neighbour list without branches:
         self.E0 = E0
         #--- pad along x by periodically repeating:
-        self.E0 = np.concatenate((self.E0[-self.irMax:,:,:], self.E0, self.E0[:self.irMax,:,:]), axis=0)
+        self.E0 = np.concatenate((
+            self.E0[-self.irMax[0]:, :, :],
+            self.E0,
+            self.E0[:self.irMax[0], :, :]
+        ), axis=0)
         #--- pad along y by periodically repeating:
-        self.E0 = np.concatenate((self.E0[:,-self.irMax:,:], self.E0, self.E0[:,:self.irMax,:]), axis=1)
+        self.E0 = np.concatenate((
+            self.E0[:, -self.irMax[1]:, :],
+            self.E0,
+            self.E0[:, :self.irMax[1], :]
+        ), axis=1)
         #--- pad along z by setting inaccessible energy (+infinity):
-        EzPad = np.full((self.E0.shape[0], self.E0.shape[1], self.irMax), np.inf)
+        EzPad = np.full(
+            (self.E0.shape[0], self.E0.shape[1], self.irMax[2]), np.inf
+        )
         self.E0 = np.concatenate((EzPad, self.E0, EzPad), axis=2)
         
         #Other parameters:
@@ -56,7 +69,7 @@ class CarrierHoppingMC:
     
     #Calculate the Coulomb interaction with regularization for 0, given vectors r (dimensions [3,...])
     def safeCoulomb(self, r):
-        return self.coulombPrefac / np.maximum(1e-6*self.h, np.sqrt(np.sum(r**2, axis=0)))
+        return self.coulombPrefac / np.maximum(1e-6*self.h.max(), np.sqrt(np.sum(r**2, axis=0)))
     
     #Calculate coulomb landscape of neighbours given grid separation iPosDelta of center locations
     #Avoid interaction with iCur: the current electron for which interactions are being calculated
@@ -65,7 +78,7 @@ class CarrierHoppingMC:
         xDelta[:2] -= np.floor(0.5 + xDelta[:2]) #wrap to nearest periodic neighbours in first two directions
         rDelta = xDelta * self.L[:,None] #displacement in nearest-periodic image convention, dimensions: [3, nElectrons, nElectrons]
         rDelta[:,iCur] = np.Inf #Avoid interacting with self
-        rDeltaNeighbor = rDelta[...,None] + self.h*self.ir[:,None,:] #dimensions: [3, nElectrons, nNeighbours]
+        rDeltaNeighbor = rDelta[..., None] + (self.h[:, None] * self.ir)[:, None, :] #dimensions: [3, nElectrons, nNeighbours]
         return ( self.safeCoulomb(rDeltaNeighbor)  #+ 1/r to the neighbour
             - self.safeCoulomb(rDelta)[:,None] ) #- 1/r to the center location
     
@@ -88,21 +101,21 @@ class CarrierHoppingMC:
         #Initial energy of each electron and its neighbourhood
         #--- Fetch energy at each electron:
         E0electron = self.E0[
-            self.irMax+iPosElectron[0],
-            self.irMax+iPosElectron[1],
-            self.irMax+iPosElectron[2]] #dimensions: [nElectrons]
+            self.irMax[0]+iPosElectron[0],
+            self.irMax[1]+iPosElectron[1],
+            self.irMax[2]+iPosElectron[2]] #dimensions: [nElectrons]
         #--- Fetch energy landscape neighbourhoods for each electron:
         iPosNeighbor = iPosElectron[...,None] + self.ir[:,None,:]
         E0neighbor = self.E0[
-            self.irMax+iPosNeighbor[0],
-            self.irMax+iPosNeighbor[1],
-            self.irMax+iPosNeighbor[2]] #dimensions: [nElectrons, nNeighbours]
+            self.irMax[0]+iPosNeighbor[0],
+            self.irMax[1]+iPosNeighbor[1],
+            self.irMax[2]+iPosNeighbor[2]] #dimensions: [nElectrons, nNeighbours]
         #--- Coulomb contributions to energy difference for each electron at initial positions:
         xDelta = (iPosElectron[:,None,:] - iPosElectron[...,None]) * (1./self.S[:,None,None]) #separation in fractional coordinates for all pairs
         xDelta[:2] -= np.floor(0.5 + xDelta[:2]) #wrap to nearest periodic neighbours in first two directions
         rDelta = xDelta * self.L[:,None,None] #displacement in nearest-periodic image convention, dimensions: [3, nElectrons, nElectrons]
         rDelta[:,range(self.nElectrons),range(self.nElectrons)] = np.Inf #Avoid interacting with self
-        rDeltaNeighbor = rDelta[...,None] + self.h*self.ir[:,None,None,:] #dimensions: [3, nElectrons, nElectrons, nNeighbours]
+        rDeltaNeighbor = rDelta[...,None] + (self.h[:, None] * self.ir)[:,None,None,:] #dimensions: [3, nElectrons, nElectrons, nNeighbours]
         coulomb = ( np.sum(self.safeCoulomb(rDeltaNeighbor), axis=0)  #+ 1/r to the neighbour
             - np.sum(self.safeCoulomb(rDelta), axis=0)[:,None] ) #- 1/r to the center location
 
@@ -141,19 +154,18 @@ class CarrierHoppingMC:
             trajectory.append((iHop+nElectronOffset, t) + tuple(iPosNew))
             if iPosNew[2] > izMax:
                 izMax = iPosNew[2]
-                print("Run", iRun, "reached", izMax/self.h, "nm at t =", t, "s")
-                if izMax >= self.S[2] - self.irMax:
+                if izMax >= self.S[2] - self.irMax[2]:
                     break #Terminate: an electron has reached end of box
             #--- update cached energies:
             iPosNeighborNew = iPosNew[:,None] + self.ir
             E0electron[iHop] = self.E0[
-                self.irMax+iPosNew[0],
-                self.irMax+iPosNew[1],
-                self.irMax+iPosNew[2]]
+                self.irMax[0]+iPosNew[0],
+                self.irMax[1]+iPosNew[1],
+                self.irMax[2]+iPosNew[2]]
             E0neighbor[iHop] = self.E0[
-                self.irMax+iPosNeighborNew[0],
-                self.irMax+iPosNeighborNew[1],
-                self.irMax+iPosNeighborNew[2]]
+                self.irMax[0]+iPosNeighborNew[0],
+                self.irMax[1]+iPosNeighborNew[1],
+                self.irMax[2]+iPosNeighborNew[2]]
             #--- update Coulomb energies of current electron:
             coulomb[iHop] = np.sum(self.coulombLandscape(iPosNew[:,None] - iPosElectron, iHop), axis=0)
             #--- update Coulomb energies of all other electrons:

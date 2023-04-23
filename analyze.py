@@ -1,9 +1,11 @@
 #!/usr/bin/env python
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
 
-def plotTrajectory(fname='trajectory.dat'):
+
+def plotTrajectory(fname):
 	trajectory = np.loadtxt(fname)
 	nElectrons = 1 + int(np.max(trajectory[:,0]))
 	print("Read trajectory with", len(trajectory), "hops and", nElectrons, "electrons")
@@ -60,4 +62,5 @@ def plotTrajectory(fname='trajectory.dat'):
 
 
 if __name__=="__main__":
-	plotTrajectory()
+	assert len(sys.argv) == 2
+	plotTrajectory(sys.argv[1])

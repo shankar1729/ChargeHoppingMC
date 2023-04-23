@@ -5,6 +5,11 @@ from scipy.ndimage import gaussian_filter1d
 from scipy.io import loadmat, savemat
 from ellipsoid import Ellipsoid
 from Poisson import Poisson
+from CarrierHoppingMC import CarrierHoppingMC
+from common import parallel_map, cpu_count
+
+
+dir_names = "xyz"
 
 
 def main():
@@ -72,7 +77,21 @@ def run_epsilon(calc):
 
 def run_mobility(calc):
     print("Running mobility")
-    calc.get_mobility(2)
+    mu = {}
+    for i_dir, dir_name in enumerate(dir_names):
+        mu_mean, mu_err = calc.get_mobility(i_dir)
+        mu[f"mu_{dir_name}"] = mu_mean
+        mu[f"mu_{dir_name}_err"] = mu_err
+    
+    # Report resuls to log:
+    print()
+    for dir_name in dir_names:
+        mu_mean = mu[f"mu_{dir_name}"]
+        mu_err = mu[f"mu_{dir_name}_err"]
+        print(f'mu_{dir_name} = ({mu_mean} +/- {mu_err}) nm^2/Vs')
+    
+    # Additionally save results in matlab format:
+    savemat("mu.mat", mu)
 
 
 class EllipsoidInterfaceCalculation:
@@ -193,7 +212,7 @@ class EllipsoidInterfaceCalculation:
     def visualize_field(self, filename_prefix, value, vmin=None, vmax=None):
         """Output visualization of scalar field `value` to filename."""
         n_panels = 4
-        for proj_dir, proj_name in enumerate("xyz"):
+        for proj_dir, proj_name in enumerate(dir_names):
             fig, axes = plt.subplots(
                 n_panels, n_panels, sharex=True, sharey=True,
                 figsize=(n_panels*2, n_panels*2),
@@ -232,6 +251,7 @@ class EllipsoidInterfaceCalculation:
         Here, `i_dir` is 0-based index of non-periodic direction with field.
         """
         assert self.molecule is not None  # Need to know for trap distribution
+        np.random.seed(0)
         
         # Create trap distributions for each type at each spatial location:
         E0 = np.zeros((np.prod(self.S), 3))
@@ -264,16 +284,17 @@ class EllipsoidInterfaceCalculation:
             self.n, np.arange(self.n_layers, dtype=float)
         ).flatten()
         E0 = -trapDepthMatrix
-        sel_mol = np.where(mask < 1.5)[0]  # select upto extrinsic interface
+        sel_mol = np.where(mask < 2.5)[0]  # select upto interface
         E0[sel_mol] = -trapDepthMol[sel_mol]
         sel_filler = np.where(mask < 0.5)[0]  # select filler alone
         E0[sel_filler] = -trapDepthFiller
         E0 = E0.reshape(self.S)
-        if i_dir == 2:  # Visualize trap landscape for one of the directions
-            self.visualize_field("energy", E0, vmin=E0.min(), vmax=E0.max())
+        # if i_dir == 2:  # Visualize trap landscape for one of the directions
+        #    self.visualize_field("energy", E0, vmin=E0.min(), vmax=E0.max())
         
         # Add electric field contributions:
         Efield = 0.06  # in V/m
+        print('\tSolving Poisson equation:')
         # --- set up boundary conditions
         Evec = [0.] * 3
         Evec[i_dir] = Efield
@@ -284,18 +305,57 @@ class EllipsoidInterfaceCalculation:
         epsilon = self.epsilon[i_lowest_freq].real  # DC, dielectric only
         epsInv = self.map_property(self.n, 1.0 / epsilon)
         phi = Poisson(self.L, epsInv, dirichletBC).solve(Evec)
-        print(phi[..., 0].mean(), phi[..., -1].mean())
-        print(phi[..., 0].std(), phi[..., -1].std())
-        exit()
+        E0 += phi
+        
+        # Permute dimensions to make i_dir last (needed for hopping):
+        L = np.copy(self.L)
+        if i_dir != 2:
+            E0 = E0.swapaxes(i_dir, 2)
+            L[[i_dir, 2]] = L[[2, i_dir]]
 
-        #--- calculate polymer internal DOS
-        #--- calculate electric field contributions and mask:
-        Ez = params["Efield"]
-        mask = params["mask"]
-        print('Solving Poisson equation:')
-        phi = PeriodicFD(L, mask, epsNP, epsBG, [False,False,True]).solve([0,0,Ez], shouldPlotNP)
-        #--- combine field and DOS contributions to energy landscape:
-        return phi + np.where(mask>0.5, params["trapDepthNP"], Epoly)
+        # Run hopping simulation:
+        nRuns = 32
+        np.random.seed(0)
+        mc = CarrierHoppingMC(
+            L=L,
+            E0=E0,  # energy landscape
+            epsBG=epsilon[-1], # background/matrix dielectric constant
+            hopDistance=1.0, # average hop distance in nm
+            hopFrequency=1E12, # average hop attempt frequency in Hz
+            maxHops=1E4, # number of hops per electron
+            nElectrons=16, # number of electrons to propagate at once
+            tMax=1E3,  # maximum time in sumulation
+            T=298.0, # temperature in Kelvin
+        )
+        trajectory = np.concatenate(
+            parallel_map(mc.run, cpu_count(), range(nRuns))
+        )  #Run in parallel and merge trajectories
+        np.savetxt(
+            f"trajectory_{dir_names[i_dir]}.dat.gz",
+            trajectory,
+            fmt="%d %e %d %d %d",
+            header="iElectron t[s] ix iy iz"
+        ) #Save trajectories together
+
+        # Extract mobility:
+        nElectrons = 1 + int(np.max(trajectory['f0']))
+        v = []
+        print(f'Analyzing trajectory with {nElectrons} electrons: ', end='', flush=True)
+        for i in range(nElectrons):
+            finalEntry = trajectory[np.where(trajectory['f0']==i)[0][-1]] #final state of current electron
+            t_end = finalEntry[1]
+            if t_end == 0:
+                continue
+            i_dir_end = finalEntry[-1]
+            v.append(i_dir_end * self.h[i_dir] / t_end) #average velocity over entire trajectory
+        print('done.')
+        v = np.array(v)
+        print(f"Pruned {nElectrons - len(v)} of {nElectrons} trajectories")
+        mu = v / (Efield * 1e9)  # mobility [nm^2/(V.s)] for each electron
+        mu_mean = mu.mean()  # average moibility
+        mu_err = mu.std() / np.sqrt(len(v))  # standard error in average mobility
+        return mu_mean, mu_err
+
 
 if __name__ == "__main__":
     main()

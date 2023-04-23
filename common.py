@@ -24,12 +24,12 @@ else:
 
 
 #Wrapper to meshgrid producing flattened results:
-def flattenedMesh(i1, i2, i3):
+def flattened_mesh(i1, i2, i3):
 	iiArr = np.meshgrid(i1, i2, i3, indexing='ij')
 	return np.hstack([ii.flatten()[:,None] for ii in iiArr])
 
 #Parallel map function: run func for each arg in argArr in nProcesses in parallel and return a list
-def parallelMap(func, nProcesses, argArr):
+def parallel_map(func, nProcesses, argArr):
 	#Start process objects that will put in a common queue:
 	queue = Queue()
 	nArg = len(argArr)
