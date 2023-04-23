@@ -6,6 +6,7 @@ from scipy.io import loadmat, savemat
 from ellipsoid import Ellipsoid
 from Poisson import Poisson
 from CarrierHoppingMC import CarrierHoppingMC
+from plotTrajectory import plotTrajectory
 from common import parallel_map, cpu_count
 
 
@@ -314,7 +315,7 @@ class EllipsoidInterfaceCalculation:
             L[[i_dir, 2]] = L[[2, i_dir]]
 
         # Run hopping simulation:
-        nRuns = 32
+        nRuns = 64
         np.random.seed(0)
         mc = CarrierHoppingMC(
             L=L,
@@ -336,6 +337,14 @@ class EllipsoidInterfaceCalculation:
             fmt="%d %e %d %d %d",
             header="iElectron t[s] ix iy iz"
         ) #Save trajectories together
+        
+        # Visualize trajectory:
+        dir_names_swapped = list(dir_names)
+        dir_names_swapped[i_dir] = dir_names[2]
+        dir_names_swapped[2] = dir_names[i_dir]
+        plotTrajectory(
+            trajectory, f"trajectory_{dir_names[i_dir]}.png", dir_names_swapped
+        )
 
         # Extract mobility:
         nElectrons = 1 + int(np.max(trajectory['f0']))
